@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>differs' blog</title>
+  <meta name="description" content="Chromium 网络栈 / 浏览器内核 / 广告拦截 / 视频嗅探 — 浏览器工程实践笔记">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📝</text></svg>">
+  <script id="app-data" type="application/json"></script>
+  <script type="module" crossorigin src="/assets/index-D-m_Aj68.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-B2s9hdAb.css">
+</head>
+<body>
+  <div class="app-layout">
+    <!-- 左侧折叠目录 -->
+    <aside class="sidebar" id="sidebar">
+      <button class="sidebar-toggle" id="sidebar-toggle" aria-label="收起侧边栏">◀</button>
+      <div class="sidebar-header">
+        <a href="/" class="sidebar-title">differs' blog</a>
+        <div class="sidebar-subtitle">浏览器工程实践笔记</div>
+      </div>
+      <nav class="sidebar-nav">
+        <ul class="toc-list" id="toc-list"></ul>
+      </nav>
+      <div class="sidebar-footer">
+        <button class="theme-btn" id="theme-btn">🌙 暗色</button>
+        <a href="https://github.com/differs" class="gh-link" target="_blank" rel="noopener">GitHub</a>
+      </div>
+    </aside>
+
+    <!-- 右侧主内容 -->
+    <main class="main-content" id="main-content">
+      <div class="content-body" id="content-body">
+        <!-- 首页欢迎区（默认显示） -->
+        <section class="hero" id="hero-section">
+          <span class="hero-emoji">👋</span>
+          <h1>你好，欢迎来到我的小站</h1>
+          <div class="hero-divider"></div>
+          <p>
+            这里记录了我对 <strong>Chromium 网络栈</strong>、<strong>浏览器内核定制</strong>、
+            <strong>广告拦截技术</strong> 和 <strong>流媒体传输</strong> 的研究与实践。
+          </p>
+          <p class="hero-hint">从左侧目录选择一篇文章开始阅读 ✨</p>
+        </section>
+
+        <!-- 动态渲染的文章 -->
+        <div id="article-container" style="display:none;"></div>
+      </div>
+    </main>
+  </div>
+
+</body>
+</html>

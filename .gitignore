@@ -1,7 +1,4 @@
-_site/
+node_modules/
 .bundle/
-vendor/
 .sass-cache/
-.jekyll-cache/
-.jekyll-metadata
-Gemfile.lock
+.vite/
