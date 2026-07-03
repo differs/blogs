@@ -1,13 +1,4 @@
-layout: post
-title: "Chromium Network Stack 深度解析：从 net/ 层到内核定制实战"
-date: 2026-03-15
-categories: [chromium, network]
-tags: [chromium, network-stack, url-request, quic, cef]
----
-
-> 本文基于对 Chromium 源码、CEF、Supermium、Kiwi Browser Next、Hysteria-rs (QUIC) 等开源项目的研究，系统梳理 Chromium 网络栈的架构与定制切入点。
-
----
+# Chromium Network Stack 深度解析：从 net/ 层到内核定制实战
 
 ## 一、为什么要理解 Chromium 的 net/ 层？
 

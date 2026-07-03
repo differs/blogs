@@ -1,30 +1,30 @@
 [
   {
-    "title": "配置上游远程",
+    "title": "Chromium Fork 的版本管理艺术：Upstream Rebase 实战指南",
     "date": "2026-06-01",
     "slug": "chromium-fork-rebase-practice",
     "url": "/post/chromium-fork-rebase-practice/",
-    "excerpt": "layout: post\ntitle: \"Chromium Fork 的版本管理艺术：Upstream Rebase 实战指南\"\ndate: 2026-06-01\ncategories: [chromium, git]\ntags: [chromium, fork, rebase, merge, git, version-management]\n---"
+    "excerpt": "Chromium Fork 的版本管理艺术：Upstream Rebase 实战指南"
   },
   {
-    "title": "1. 网络请求拦截（最常用）",
+    "title": "Chrome 广告拦截技术深度解析：从 webRequest 到 declarativeNetRequest",
     "date": "2026-05-10",
     "slug": "adblock-declarative-net-request",
     "url": "/post/adblock-declarative-net-request/",
-    "excerpt": "layout: post\ntitle: \"Chrome 广告拦截技术深度解析：从 webRequest 到 declarativeNetRequest\"\ndate: 2026-05-10\ncategories: [adblock, chrome-extensions]\ntags: [adblock, mv3, declarative-net-request, ublock-origin, chro"
+    "excerpt": "Chrome 广告拦截技术深度解析：从 webRequest 到 declarativeNetRequest"
   },
   {
-    "title": "1. 用 Chrome DevTools 观察视频请求",
+    "title": "浏览器视频嗅探与 P2P 下载技术全解析",
     "date": "2026-04-20",
     "slug": "video-sniffing-p2p-download",
     "url": "/post/video-sniffing-p2p-download/",
-    "excerpt": "layout: post\ntitle: \"浏览器视频嗅探与 P2P 下载技术全解析\"\ndate: 2026-04-20\ncategories: [streaming, p2p]\ntags: [hls, m3u8, webtorrent, dht, fec, udp]\n---"
+    "excerpt": "浏览器视频嗅探与 P2P 下载技术全解析"
   },
   {
-    "title": "Kiwi 的自动同步脚本机制",
+    "title": "Chromium Network Stack 深度解析：从 net/ 层到内核定制实战",
     "date": "2026-03-15",
     "slug": "chromium-net-kernel-deep-dive",
     "url": "/post/chromium-net-kernel-deep-dive/",
-    "excerpt": "layout: post\ntitle: \"Chromium Network Stack 深度解析：从 net/ 层到内核定制实战\"\ndate: 2026-03-15\ncategories: [chromium, network]\ntags: [chromium, network-stack, url-request, quic, cef]\n---"
+    "excerpt": "Chromium Network Stack 深度解析：从 net/ 层到内核定制实战"
   }
 ]

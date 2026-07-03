@@ -1,9 +1,4 @@
-layout: post
-title: "Chromium Fork 的版本管理艺术：Upstream Rebase 实战指南"
-date: 2026-06-01
-categories: [chromium, git]
-tags: [chromium, fork, rebase, merge, git, version-management]
----
+# Chromium Fork 的版本管理艺术：Upstream Rebase 实战指南
 
 > 本文基于对 Kiwi Browser Next、Supermium、Brave Browser、Hysteria (fork Quinn) 等开源项目的源码分析，系统梳理 Chromium fork 的 Upstream 同步策略、冲突解决与版本管理最佳实践。
 

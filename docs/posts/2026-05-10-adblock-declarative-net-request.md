@@ -1,13 +1,4 @@
-layout: post
-title: "Chrome 广告拦截技术深度解析：从 webRequest 到 declarativeNetRequest"
-date: 2026-05-10
-categories: [adblock, chrome-extensions]
-tags: [adblock, mv3, declarative-net-request, ublock-origin, chromium]
----
-
-> 本文基于对 uBlock Origin、Adblock Plus、Chrome Extensions API、declarativeNetRequest 机制以及 Chromium 网络栈的研究，系统梳理浏览器广告拦截的技术原理、MV3 变革与实战方案。
-
----
+# Chrome 广告拦截技术深度解析：从 webRequest 到 declarativeNetRequest
 
 ## 一、广告拦截的核心机制：net::ERR_BLOCKED_BY_CLIENT
 
