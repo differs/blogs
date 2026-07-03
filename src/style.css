@@ -219,35 +219,31 @@ a { color: inherit; text-decoration: none; }
 .hero {
   position: relative;
   text-align: center;
-  padding: 30px 0 10px;
+  min-height: 30vh;
 }
 
-/* ======== 奔跑松鼠 ======== */
-.hero-squirrel {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  max-width: 420px;
-  width: 85%;
-  margin: 0 auto;
-}
-
-.squirrel-img {
+/* ======== 全屏奔跑松鼠 ======== */
+.squirrel-bg {
+  position: absolute;
+  inset: 0;
   width: 100%;
-  height: auto;
-  display: block;
-  animation: squirrelBob 0.8s ease-in-out infinite;
-  /* 暗色模式下降低亮度 */
-  filter: drop-shadow(0 4px 12px rgba(217,119,6,0.15));
+  height: 100%;
+  object-fit: cover;
+  object-position: center 30%;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.12;
+  animation: squirrelRun 0.8s ease-in-out infinite;
 }
 
-[data-theme="dark"] .squirrel-img {
-  filter: brightness(0.9) drop-shadow(0 4px 12px rgba(217,119,6,0.2));
+[data-theme="dark"] .squirrel-bg {
+  opacity: 0.08;
+  filter: brightness(0.7);
 }
 
-@keyframes squirrelBob {
+@keyframes squirrelRun {
   0%, 100% { transform: translateY(0); }
-  50%      { transform: translateY(-8px); }
+  50%      { transform: translateY(-6px); }
 }
 
 /* ============================================
@@ -472,7 +468,7 @@ a { color: inherit; text-decoration: none; }
   .main-content { margin-left: 0; }
   .main-content.expanded { margin-left: 0; }
   .content-body { padding: 28px 18px 40px; }
-  .hero-squirrel { width: 75%; }
+  .squirrel-bg { object-position: center 40%; }
   .article-title { font-size: 1.4rem; }
   .article-body pre {
     padding: 12px 14px;
