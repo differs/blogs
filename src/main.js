@@ -180,6 +180,13 @@ function renderPost(post) {
         if (!h.id) h.id = `heading-${i}`;
       });
 
+      // 文章体滚动渐入
+      const body = articleContainer.querySelector('.article-body');
+      if (body) {
+        body.classList.add('visible'); // 先标记，observer 会检测
+        initScrollAnimation();
+      }
+
       window.scrollTo({ top: 0, behavior: 'smooth' });
 
       // 手机上收起侧边栏
@@ -202,6 +209,46 @@ function escapeHtml(s) {
   return d.innerHTML;
 }
 
+// ---------- 滚动渐入动画 ----------
+let scrollObserver = null;
+
+function initScrollAnimation() {
+  if (scrollObserver) scrollObserver.disconnect();
+  scrollObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('visible');
+        scrollObserver.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.12, rootMargin: '0px 0px -30px 0px' });
+
+  document.querySelectorAll('.fade-in, .article-body').forEach(el => {
+    scrollObserver.observe(el);
+  });
+}
+
+function triggerHeroEntrance() {
+  // 首页 hero 元素依次渐入（非滚动触发，而是页面加载后执行）
+  const els = [
+    document.querySelector('.hero-emoji'),
+    document.querySelector('.hero h1'),
+    document.querySelector('.hero-divider'),
+    document.querySelector('.hero p'),
+    document.querySelector('.hero-hint'),
+  ].filter(Boolean);
+
+  els.forEach((el, i) => {
+    el.style.opacity = '0';
+    el.style.transform = 'translateY(20px)';
+    el.style.transition = `opacity 0.5s cubic-bezier(0.22,1,0.36,1) ${i * 0.12}s, transform 0.5s cubic-bezier(0.22,1,0.36,1) ${i * 0.12}s`;
+    requestAnimationFrame(() => {
+      el.style.opacity = '1';
+      el.style.transform = 'translateY(0)';
+    });
+  });
+}
+
 // ---------- 导航 ----------
 function navigate(slug) {
   if (!slug) return showHome();
@@ -211,7 +258,16 @@ function navigate(slug) {
 
 function showHome() {
   state.currentSlug = null;
-  if (heroSection) heroSection.style.display = '';
+  if (heroSection) {
+    heroSection.style.display = '';
+    // 重置 hero 动画，在渲染后重新触发
+    const els = heroSection.querySelectorAll('.hero-emoji, h1, .hero-divider, p, .hero-hint');
+    els.forEach(el => {
+      el.style.opacity = '0';
+      el.style.transform = 'translateY(20px)';
+    });
+    setTimeout(triggerHeroEntrance, 50);
+  }
   if (articleContainer) articleContainer.style.display = 'none';
   document.title = "differs' blog";
   highlightToc(null);
@@ -266,6 +322,10 @@ async function init() {
 
   // 路由
   handleRoute();
+
+  // 动画
+  setTimeout(triggerHeroEntrance, 100);
+  setTimeout(initScrollAnimation, 300);
 }
 
 // ---------- 启动 ----------
