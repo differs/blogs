@@ -1,0 +1,17 @@
+title: differs' blog
+description: >-
+  Chromium 网络栈 / 浏览器内核 / 广告拦截 / 视频嗅探 — 浏览器工程实践笔记
+theme: jekyll-theme-hacker
+show_downloads: false
+google_analytics:
+lang: zh-CN
+
+# Build settings
+permalink: /:year/:month/:title/
+markdown: kramdown
+
+# Exclude
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - vendor

@@ -1,4 +1,10 @@
-# 浏览器视频嗅探与 P2P 下载技术全解析
+---
+layout: post
+title: "浏览器视频嗅探与 P2P 下载技术全解析"
+date: 2026-04-20
+categories: [streaming, p2p]
+tags: [hls, m3u8, webtorrent, dht, fec, udp]
+---
 
 > 本文基于对 HLS.js、m3u8 协议、WebTorrent、UDPspeeder、rs-speedudp 以及 Chromium 网络栈的研究，系统梳理浏览器端视频嗅探、流媒体传输和 P2P 下载的技术原理与实现方案。
 

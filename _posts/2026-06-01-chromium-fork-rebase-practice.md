@@ -1,4 +1,10 @@
-# Chromium Fork 的版本管理艺术：Upstream Rebase 实战指南
+---
+layout: post
+title: "Chromium Fork 的版本管理艺术：Upstream Rebase 实战指南"
+date: 2026-06-01
+categories: [chromium, git]
+tags: [chromium, fork, rebase, merge, git, version-management]
+---
 
 > 本文基于对 Kiwi Browser Next、Supermium、Brave Browser、Hysteria (fork Quinn) 等开源项目的源码分析，系统梳理 Chromium fork 的 Upstream 同步策略、冲突解决与版本管理最佳实践。
 
@@ -250,7 +256,7 @@ DEPS 管理子仓库                    Cargo.toml 管理依赖
 
 ## 五、开源项目参考
 
-### 5.1 Su妹妹ium（Win32SS）
+### 5.1 Supermium（Win32SS）
 
 `https://github.com/win32ss/supermium`
 
@@ -260,7 +266,7 @@ DEPS 管理子仓库                    Cargo.toml 管理依赖
 - **特点：** 最活跃的第三方 Chromium fork
 
 ```bash
-# Su妹妹ium 的同步方式
+# Supermium 的同步方式
 git fetch chromium
 git merge chromium/main  # merge 而非 rebase
 ```
