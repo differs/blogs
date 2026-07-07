@@ -1,5 +1,26 @@
 [
   {
+    "title": "跨平台开发的平台差异与解决方案：iOS / Android / 鸿蒙 实战对比",
+    "date": "2026-07-07",
+    "slug": "cross-platform-differences",
+    "url": "/post/cross-platform-differences/",
+    "excerpt": "跨平台开发的平台差异与解决方案：iOS / Android / 鸿蒙 实战对比"
+  },
+  {
+    "title": "Chromium content/blink 层定制实战：自定义协议、渲染管线与内核改造",
+    "date": "2026-07-03",
+    "slug": "chromium-content-blink-customization",
+    "url": "/post/chromium-content-blink-customization/",
+    "excerpt": "Chromium content/blink 层定制实战：自定义协议、渲染管线与内核改造"
+  },
+  {
+    "title": "Android 浏览器定制实战：默认搜索、主页、网盘入口集成",
+    "date": "2026-07-03",
+    "slug": "android-browser-customization",
+    "url": "/post/android-browser-customization/",
+    "excerpt": "Android 浏览器定制实战：默认搜索、主页、网盘入口集成"
+  },
+  {
     "title": "Chromium Fork 的版本管理艺术：Upstream Rebase 实战指南",
     "date": "2026-06-01",
     "slug": "chromium-fork-rebase-practice",
