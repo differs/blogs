@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chromium content/blink 层定制实战：自定义协议、渲染管线与内核改造 · differs' blog</title>
+<meta name="description" content="本文是 Chromium 内核定制的第三篇。第一篇讲 net/ 层（网络栈），第二篇讲 fork/rebase 管理。本文将深入 content/ 和 blink/ 两个核心模块，展示如何在 Chromium 源码级别做实际定制。 一、Chromium 进程架构全景 在谈 content/blink 之前，先理清 Chromium 的多进程架构：">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://blog.wedevs.org/articles/chromium-content-blink-customization.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Chromium content/blink 层定制实战：自定义协议、渲染管线与内核改造","datePublished":"2026-07-03","description":"本文是 Chromium 内核定制的第三篇。第一篇讲 net/ 层（网络栈），第二篇讲 fork/rebase 管理。本文将深入 content/ 和 blink/ 两个核心模块，展示如何在 Chromium 源码级别做实际定制。 一、Chromium 进程架构全景 在谈 content/blink 之前，先理清 Chromium 的多进程架构：","url":"https://blog.wedevs.org/articles/chromium-content-blink-customization.html","author":{"@type":"Person","name":"differs","url":"https://github.com/differs"}}</script>
+<style>
+
+:root {
+  --bg: #f7f8fa;
+  --card: #ffffff;
+  --text: #1f2328;
+  --text-light: #57606a;
+  --text-muted: #8b949e;
+  --border: #d0d7de;
+  --accent: #1a56db;
+  --accent-bg: #eef4ff;
+  --code-bg: #f6f8fa;
+  --quote-bg: #f0f4ff;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  font-family: "Noto Sans CJK SC", "Source Han Sans SC", "PingFang SC",
+    "Microsoft YaHei", "Hiragino Sans GB", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.85;
+  font-size: 16px;
+}
+.site-header {
+  border-bottom: 1px solid var(--border);
+  background: var(--card);
+  position: sticky; top: 0; z-index: 10;
+}
+.site-header .inner {
+  max-width: 860px; margin: 0 auto; padding: 14px 24px;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+.site-header .site-title { font-weight: 700; font-size: 15px; color: var(--text); text-decoration: none; }
+.site-header .site-title:hover { color: var(--accent); }
+.site-header .site-sub { font-size: 12px; color: var(--text-muted); }
+.site-header .back-link { font-size: 13px; color: var(--accent); text-decoration: none; }
+.site-header .back-link:hover { text-decoration: underline; }
+.container { max-width: 860px; margin: 0 auto; padding: 40px 24px 64px; }
+article.post { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 40px 48px; }
+.post-header { border-bottom: 1px solid var(--border); padding-bottom: 20px; margin-bottom: 24px; }
+.post-title { font-size: 26px; line-height: 1.4; margin: 0 0 10px; }
+.post-meta { font-size: 13px; color: var(--text-light); display: flex; gap: 16px; flex-wrap: wrap; }
+.post-meta a { color: var(--accent); text-decoration: none; }
+.post-meta a:hover { text-decoration: underline; }
+.toc {
+  background: var(--accent-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin: 0 0 28px;
+  font-size: 14px;
+}
+.toc summary { cursor: pointer; font-weight: 600; color: var(--text); margin-bottom: 8px; }
+.toc ul { margin: 0; padding-left: 18px; }
+.toc li { margin: 3px 0; }
+.toc a { color: var(--accent); text-decoration: none; }
+.toc a:hover { text-decoration: underline; }
+.article-body { font-size: 16px; }
+.article-body > *:first-child { margin-top: 0; }
+.article-body h1, .article-body h2, .article-body h3, .article-body h4 {
+  line-height: 1.45; margin: 1.6em 0 0.6em; scroll-margin-top: 80px;
+}
+.article-body h2 { font-size: 22px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+.article-body h3 { font-size: 18px; }
+.article-body h4 { font-size: 16px; }
+.article-body p { margin: 0.8em 0; }
+.article-body a { color: var(--accent); }
+.article-body ul, .article-body ol { padding-left: 26px; margin: 0.8em 0; }
+.article-body li { margin: 0.3em 0; }
+.article-body blockquote {
+  margin: 1em 0; padding: 10px 18px;
+  background: var(--quote-bg);
+  border-left: 4px solid var(--accent);
+  border-radius: 0 8px 8px 0;
+  color: var(--text-light);
+}
+.article-body blockquote p { margin: 0.3em 0; }
+.article-body table { border-collapse: collapse; width: 100%; margin: 1em 0; font-size: 14px; display: block; overflow-x: auto; }
+.article-body th, .article-body td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; }
+.article-body th { background: var(--accent-bg); font-weight: 600; }
+.article-body tr:nth-child(even) td { background: #fafbfc; }
+.article-body code {
+  font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", "Source Code Pro", Consolas, monospace;
+  font-size: 0.88em;
+  background: var(--code-bg);
+  padding: 2px 6px; border-radius: 4px;
+}
+.article-body pre {
+  margin: 1.2em 0; padding: 0; border-radius: 8px; overflow-x: auto;
+  background: #24292e; line-height: 1.6; font-size: 13.5px;
+}
+.article-body pre code {
+  display: block; padding: 16px 18px; background: none;
+  color: #e6edf3; font-size: inherit; overflow: visible;
+}
+.article-body hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+.article-body img { max-width: 100%; border-radius: 8px; }
+.post-footer {
+  margin-top: 36px; padding-top: 20px;
+  border-top: 1px solid var(--border);
+  font-size: 13px; color: var(--text-light);
+  display: flex; gap: 18px; flex-wrap: wrap;
+}
+.post-footer a { color: var(--accent); text-decoration: none; }
+.post-footer a:hover { text-decoration: underline; }
+.site-footer { text-align: center; font-size: 12px; color: var(--text-muted); padding: 0 24px 40px; }
+@media (max-width: 640px) {
+  article.post { padding: 24px 18px; }
+  .post-title { font-size: 21px; }
+  .container { padding: 20px 12px 48px; }
+}
+@media print {
+  body { background: #fff; }
+  article.post { border: none; padding: 0; }
+  .site-header { position: static; }
+  pre { white-space: pre-wrap; word-break: break-all; }
+}
+
+pre code.hljs {
+  display: block;
+  overflow-x: auto;
+  padding: 1em
+}
+code.hljs {
+  padding: 3px 5px
+}
+/*!
+  Theme: GitHub Dark
+  Description: Dark theme as seen on github.com
+  Author: github.com
+  Maintainer: @Hirse
+  Updated: 2021-05-15
+
+  Outdated base version: https://github.com/primer/github-syntax-dark
+  Current colors taken from GitHub's CSS
+*/
+.hljs {
+  color: #c9d1d9;
+  background: #0d1117
+}
+.hljs-doctag,
+.hljs-keyword,
+.hljs-meta .hljs-keyword,
+.hljs-template-tag,
+.hljs-template-variable,
+.hljs-type,
+.hljs-variable.language_ {
+  /* prettylights-syntax-keyword */
+  color: #ff7b72
+}
+.hljs-title,
+.hljs-title.class_,
+.hljs-title.class_.inherited__,
+.hljs-title.function_ {
+  /* prettylights-syntax-entity */
+  color: #d2a8ff
+}
+.hljs-attr,
+.hljs-attribute,
+.hljs-literal,
+.hljs-meta,
+.hljs-number,
+.hljs-operator,
+.hljs-variable,
+.hljs-selector-attr,
+.hljs-selector-class,
+.hljs-selector-id {
+  /* prettylights-syntax-constant */
+  color: #79c0ff
+}
+.hljs-regexp,
+.hljs-string,
+.hljs-meta .hljs-string {
+  /* prettylights-syntax-string */
+  color: #a5d6ff
+}
+.hljs-built_in,
+.hljs-symbol {
+  /* prettylights-syntax-variable */
+  color: #ffa657
+}
+.hljs-comment,
+.hljs-code,
+.hljs-formula {
+  /* prettylights-syntax-comment */
+  color: #8b949e
+}
+.hljs-name,
+.hljs-quote,
+.hljs-selector-tag,
+.hljs-selector-pseudo {
+  /* prettylights-syntax-entity-tag */
+  color: #7ee787
+}
+.hljs-subst {
+  /* prettylights-syntax-storage-modifier-import */
+  color: #c9d1d9
+}
+.hljs-section {
+  /* prettylights-syntax-markup-heading */
+  color: #1f6feb;
+  font-weight: bold
+}
+.hljs-bullet {
+  /* prettylights-syntax-markup-list */
+  color: #f2cc60
+}
+.hljs-emphasis {
+  /* prettylights-syntax-markup-italic */
+  color: #c9d1d9;
+  font-style: italic
+}
+.hljs-strong {
+  /* prettylights-syntax-markup-bold */
+  color: #c9d1d9;
+  font-weight: bold
+}
+.hljs-addition {
+  /* prettylights-syntax-markup-inserted */
+  color: #aff5b4;
+  background-color: #033a16
+}
+.hljs-deletion {
+  /* prettylights-syntax-markup-deleted */
+  color: #ffdcd7;
+  background-color: #67060c
+}
+.hljs-char.escape_,
+.hljs-link,
+.hljs-params,
+.hljs-property,
+.hljs-punctuation,
+.hljs-tag {
+  /* purposely ignored */
+  
+}
+</style>
+</head>
+<body>
+<header class="site-header">
+  <div class="inner">
+    <a class="site-title" href="/">differs' blog <span class="site-sub">浏览器工程实践笔记</span></a>
+    <a class="back-link" href="/">← 返回博客</a>
+  </div>
+</header>
+<div class="container">
+  <article class="post">
+    <header class="post-header">
+      <h1 class="post-title">Chromium content/blink 层定制实战：自定义协议、渲染管线与内核改造</h1>
+      <div class="post-meta">
+        <span>📅 2026-07-03</span>
+        <a href="/">differs' blog</a>
+        <a href="/post/chromium-content-blink-customization/">交互版（SPA）</a>
+      </div>
+    </header>
+    <nav class="toc" aria-label="目录"><details open><summary>目录</summary><ul><li style="margin-left:-14px"><a href="#sec-1">Chromium content/blink 层定制实战：自定义协议、渲染管线与内核改造</a></li><li style="margin-left:0px"><a href="#sec-2">一、Chromium 进程架构全景</a></li><li style="margin-left:0px"><a href="#sec-3">二、实战一：注册自定义协议（kexample://）</a></li><li style="margin-left:14px"><a href="#sec-4">2.1 核心类图</a></li><li style="margin-left:14px"><a href="#sec-5">2.2 步骤详解</a></li><li style="margin-left:28px"><a href="#sec-6">Step 1：定义 Scheme Handler</a></li><li style="margin-left:28px"><a href="#sec-7">Step 2：实现 CreateJob</a></li><li style="margin-left:28px"><a href="#sec-8">Step 3：在 ContentBrowserClient 中注册</a></li><li style="margin-left:28px"><a href="#sec-9">Step 4：处理导航请求</a></li><li style="margin-left:14px"><a href="#sec-10">2.3 Kiwi Browser 的实际参考</a></li><li style="margin-left:0px"><a href="#sec-11">三、实战二：修改 Blink 渲染管线</a></li><li style="margin-left:14px"><a href="#sec-12">3.1 渲染管线流程图</a></li><li style="margin-left:14px"><a href="#sec-13">3.2 切入点一：Document 生命周期钩子</a></li><li style="margin-left:14px"><a href="#sec-14">3.3 切入点二：RenderView 拦截</a></li><li style="margin-left:14px"><a href="#sec-15">3.4 切入点三：CSS 样式拦截</a></li><li style="margin-left:0px"><a href="#sec-16">四、实战三：WebView 集成（安卓端定制的关键）</a></li><li style="margin-left:14px"><a href="#sec-17">4.1 WebView 架构</a></li><li style="margin-left:14px"><a href="#sec-18">4.2 在 Kiwi Browser 中，WebView 被替换为完整的 Browser</a></li><li style="margin-left:14px"><a href="#sec-19">4.3 自定义 WebViewClient 实现</a></li><li style="margin-left:0px"><a href="#sec-20">五、实战四：修改 BUILD.gn 构建配置</a></li><li style="margin-left:0px"><a href="#sec-21">六、从开源项目学习的实践路径</a></li><li style="margin-left:14px"><a href="#sec-22">6.1 推荐研究的开源项目</a></li><li style="margin-left:14px"><a href="#sec-23">6.2 Kiwi Browser 扩展支持的源码路径</a></li><li style="margin-left:14px"><a href="#sec-24">6.3 动手实验清单</a></li><li style="margin-left:0px"><a href="#sec-25">七、与 Hysteria 经验的关联</a></li><li style="margin-left:0px"><a href="#sec-26">八、总结：Chromium 内核定制能力矩阵</a></li></ul></details></nav>
+    <div class="article-body">
+<h1 id="sec-1">Chromium content/blink 层定制实战：自定义协议、渲染管线与内核改造</h1><blockquote>
+<p>本文是 Chromium 内核定制的第三篇。第一篇讲 net/ 层（网络栈），第二篇讲 fork/rebase 管理。本文将深入 <strong>content/</strong> 和 <strong>blink/</strong> 两个核心模块，展示如何在 Chromium 源码级别做实际定制。</p>
+</blockquote>
+<hr>
+<h2 id="sec-2">一、Chromium 进程架构全景</h2><p>在谈 content/blink 之前，先理清 Chromium 的多进程架构：</p>
+<pre><code class="hljs language-text">Chrome Browser Process（单例）
+├── GPU Process
+├── Utility Process
+├── Renderer Process × N（每个 Tab 一个）
+│   └── Blink（渲染引擎）+ V8（JS 引擎）
+├── Network Service（网络服务）
+├── Storage Service
+└── Content Service（桥梁层）</code></pre><p><strong>content/</strong> 是 Chromium 的&quot;胶水层&quot;——它不直接实现功能，而是协调 Blink（渲染）、Net（网络）、CC（合成器）等子系统：</p>
+<pre><code class="hljs language-text">//content/ 的职责：
+├── 管理 Browser/Renderer/Network 进程间通信（IPC）
+├── 实现 Navigation 流程（页面加载生命周期）
+├── 提供 WebContents API（JS 扩展可以调用的 C++ 接口）
+├── 实现 Protocol Handler（自定义协议注册）
+├── 管理 RenderProcessHost（渲染进程生命周期）
+└── 实现 ResourceDispatcher（资源加载调度）</code></pre><p><strong>blink/</strong> 的职责：</p>
+<pre><code class="hljs language-text">//third_party/blink/ 的职责：
+├── HTML/CSS/DOM 解析与渲染
+├── Layout 树构建与几何计算
+├── Painting（绘制到 Layer）
+├── JavaScript 绑定（V8 ↔ Blink）
+├── Web API 实现（Fetch、WebSocket、Storage 等）
+└── Service Worker 运行时</code></pre><hr>
+<h2 id="sec-3">二、实战一：注册自定义协议（kexample://）</h2><p>这是 Chromium 内核定制最常见的场景之一。比如你要做一个&quot;蛙蛙网盘&quot;浏览器，需要支持 <code>kwawa://</code> 协议来直接打开网盘文件。</p>
+<h3 id="sec-4">2.1 核心类图</h3><pre><code class="hljs language-text">ProtocolHandler（抽象基类）
+    ↑
+CustomSchemeHandler（你的实现）
+    ↑
+ContentBrowserClient::GetSchemeHandlerFactories() → 注册工厂</code></pre><h3 id="sec-5">2.2 步骤详解</h3><h4 id="sec-6">Step 1：定义 Scheme Handler</h4><p>在 <code>chrome/browser/custom_scheme_handler.h</code>：</p>
+<pre><code class="hljs language-cpp"><span class="hljs-meta">#<span class="hljs-keyword">ifndef</span> CHROME_BROWSER_CUSTOM_SCHEME_HANDLER_H_</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> CHROME_BROWSER_CUSTOM_SCHEME_HANDLER_H_</span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&quot;content/public/browser/resource_handle_actor.h&quot;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&quot;net/url_request/url_request_job_factory.h&quot;</span></span>
+
+<span class="hljs-comment">// 自定义协议 handler，处理 kwawa:// 开头的请求</span>
+<span class="hljs-keyword">class</span> <span class="hljs-title class_">CustomSchemeHandler</span> : <span class="hljs-keyword">public</span> net::URLRequestJobFactory::ProtocolHandler {
+ <span class="hljs-keyword">public</span>:
+  <span class="hljs-function"><span class="hljs-keyword">explicit</span> <span class="hljs-title">CustomSchemeHandler</span><span class="hljs-params">(
+      std::unique_ptr&lt;content::ProtocolHandler&gt; protocol_handler)</span>
+      : protocol_handler_(std::move(protocol_handler)) {</span>}
+
+  <span class="hljs-comment">// net::URLRequestJobFactory::ProtocolHandler 接口</span>
+  <span class="hljs-function">std::unique_ptr&lt;net::URLRequestJob&gt; <span class="hljs-title">CreateJob</span><span class="hljs-params">(
+      net::URLRequest* request,
+      net::NetworkDelegate* network_delegate)</span> <span class="hljs-type">const</span> <span class="hljs-keyword">override</span></span>;
+
+  <span class="hljs-comment">// 协议前缀，如 &quot;kwawa&quot;</span>
+  <span class="hljs-function"><span class="hljs-type">const</span> std::string&amp; <span class="hljs-title">scheme</span><span class="hljs-params">()</span> <span class="hljs-type">const</span> </span>{ <span class="hljs-keyword">return</span> scheme_; }
+
+ <span class="hljs-keyword">private</span>:
+  std::unique_ptr&lt;content::ProtocolHandler&gt; protocol_handler_;
+  std::string scheme_ = <span class="hljs-string">&quot;kwawa&quot;</span>;
+};
+
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span>  <span class="hljs-comment">// CHROME_BROWSER_CUSTOM_SCHEME_HANDLER_H_</span></span></code></pre><h4 id="sec-7">Step 2：实现 CreateJob</h4><pre><code class="hljs language-cpp"><span class="hljs-comment">// custom_scheme_handler.cc</span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&quot;chrome/browser/custom_scheme_handler.h&quot;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&quot;content/public/browser/browser_task_threads.h&quot;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&quot;net/url_request/url_request_job.h&quot;</span></span>
+
+<span class="hljs-function">std::unique_ptr&lt;net::URLRequestJob&gt; <span class="hljs-title">CustomSchemeHandler::CreateJob</span><span class="hljs-params">(
+    net::URLRequest* request,
+    net::NetworkDelegate* network_delegate)</span> <span class="hljs-type">const</span> </span>{
+  <span class="hljs-comment">// 委托给 content 层的 ProtocolHandler</span>
+  <span class="hljs-keyword">return</span> protocol_handler_-&gt;<span class="hljs-built_in">CreateProtocolHandler</span>(
+      request, network_delegate);
+}</code></pre><h4 id="sec-8">Step 3：在 ContentBrowserClient 中注册</h4><p>这是最关键的一步。你需要修改 <code>//chrome/browser/chrome_content_browser_client.cc</code>：</p>
+<pre><code class="hljs language-cpp"><span class="hljs-comment">// chrome_content_browser_client.cc</span>
+
+<span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">ChromeContentBrowserClient::ConfigureSchemes</span><span class="hljs-params">()</span> </span>{
+  <span class="hljs-comment">// 1. 注册自定义协议到 URL 规范</span>
+  net::SchemeRegistry::<span class="hljs-built_in">RegisterURISchemeAsLocal</span>(
+      GURL::<span class="hljs-built_in">kStandardSchemeFromString</span>(<span class="hljs-string">&quot;kwawa&quot;</span>));
+  net::SchemeRegistry::<span class="hljs-built_in">RegisterURISchemeAsSecure</span>(<span class="hljs-string">&quot;kwawa&quot;</span>);
+  net::SchemeRegistry::<span class="hljs-built_in">RegisterURISchemeAsBypassingContentSecurityPolicy</span>(
+      <span class="hljs-string">&quot;kwawa&quot;</span>, net::SchemeRegistry::ShouldBypassForScheme::kNever);
+}
+
+<span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">ChromeContentBrowserClient::RegisterSchemeWithFeatureMap</span><span class="hljs-params">(
+    net::FeatureMap* feature_map)</span> </span>{
+  <span class="hljs-comment">// 2. 注册 scheme handler factory</span>
+  <span class="hljs-keyword">auto</span> handler = std::<span class="hljs-built_in">make_unique</span>&lt;CustomSchemeHandler&gt;(
+      std::<span class="hljs-built_in">make_unique</span>&lt;ContentBrowserProtocolHandler&gt;());
+  feature_map-&gt;<span class="hljs-built_in">RegisterSchemeWithCustomHandler</span>(<span class="hljs-string">&quot;kwawa&quot;</span>, std::<span class="hljs-built_in">move</span>(handler));
+}</code></pre><h4 id="sec-9">Step 4：处理导航请求</h4><p>当用户在地址栏输入 <code>kwawa://drive/open?file=abc123</code> 时，Chromium 会创建一个 <code>NavigationEntry</code>，你需要在 content 层拦截并处理：</p>
+<pre><code class="hljs language-cpp"><span class="hljs-comment">// content/browser/navigation_controller_impl.cc 附近</span>
+<span class="hljs-comment">// 自定义 NavigationController 钩子</span>
+
+<span class="hljs-keyword">class</span> <span class="hljs-title class_">KwawaNavigationHandler</span> : <span class="hljs-keyword">public</span> content::NavigationController::Delegate {
+ <span class="hljs-keyword">public</span>:
+  <span class="hljs-comment">// 在导航开始前调用</span>
+  <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">WillNavigate</span><span class="hljs-params">(content::NavigationController* controller,
+                    <span class="hljs-type">const</span> GURL&amp; url)</span> <span class="hljs-keyword">override</span> </span>{
+    <span class="hljs-keyword">if</span> (url.<span class="hljs-built_in">SchemeIs</span>(<span class="hljs-string">&quot;kwawa&quot;</span>)) {
+      <span class="hljs-comment">// 拦截 kwawa:// 导航</span>
+      <span class="hljs-comment">// 1. 解析 URL 参数</span>
+      <span class="hljs-comment">// 2. 创建特殊的 WebContents</span>
+      <span class="hljs-comment">// 3. 加载自定义 UI（可以是本地 HTML 或远程页面）</span>
+      
+      <span class="hljs-comment">// 示例：打开网盘文件查看器</span>
+      <span class="hljs-built_in">OpenFileViewer</span>(url);
+    }
+  }
+};</code></pre><h3 id="sec-10">2.3 Kiwi Browser 的实际参考</h3><p>Kiwi Browser 在 <code>chrome/android/</code> 中做了类似的事情——它注册了 <code>intent://</code> 协议处理器来支持 Android Intents：</p>
+<pre><code class="hljs language-cpp"><span class="hljs-comment">// Kiwi 的 IntentBridge.java → JNI → C++</span>
+<span class="hljs-comment">// 路径：chrome/android/java/src/org/chromium/chrome/browser/intent/IntentBridge.java</span>
+
+@<span class="hljs-function">JavascriptInterface
+<span class="hljs-keyword">public</span> <span class="hljs-type">void</span> <span class="hljs-title">openUrl</span><span class="hljs-params">(@Nullable String url)</span> </span>{
+    <span class="hljs-comment">// 从 JS 调用，转发到 native</span>
+    <span class="hljs-comment">// 这就是 Chrome 扩展 content script 与 native 通信的方式</span>
+}</code></pre><p><strong>关键理解：</strong> Chrome 扩展的 <code>chrome.runtime.connectNative()</code> 和 <code>chrome.windows.create()</code> 最终都是通过 <code>content/</code> 层的 IPC 通道到达 Browser Process 的。</p>
+<hr>
+<h2 id="sec-11">三、实战二：修改 Blink 渲染管线</h2><p>Blink 的渲染管线是 Chromium 最复杂的部分之一。了解它是在浏览器定制中做<strong>页面内容注入、DOM 修改、CSS 拦截</strong>的基础。</p>
+<h3 id="sec-12">3.1 渲染管线流程图</h3><pre><code class="hljs language-text">HTML Parser (blink/html/parser)
+    ↓
+DOM Tree + CSSOM Tree
+    ↓
+Render Tree (blink/core/render_tree)
+    ↓
+Layout (blink/layout)
+    ↓
+Paint (blink/painting)
+    ↓
+Compositing (blink/compositor)
+    ↓
+GPU Rasterization</code></pre><h3 id="sec-13">3.2 切入点一：Document 生命周期钩子</h3><p><code>Document</code> 是 Blink 的核心类，代表一个 HTML 页面。你可以在 <code>Document</code> 创建和加载过程中插入自定义逻辑：</p>
+<pre><code class="hljs language-cpp"><span class="hljs-comment">// 自定义 Document 子类</span>
+<span class="hljs-keyword">class</span> <span class="hljs-title class_">KwawaDocument</span> : <span class="hljs-keyword">public</span> blink::Document {
+ <span class="hljs-keyword">public</span>:
+  <span class="hljs-function"><span class="hljs-type">static</span> blink::PassRefPtr&lt;KwawaDocument&gt; <span class="hljs-title">Create</span><span class="hljs-params">(
+      blink::ExecutionContext* context,
+      blink::Frame* frame)</span> </span>{
+    <span class="hljs-keyword">auto</span> doc = <span class="hljs-built_in">adoptRef</span>(*<span class="hljs-keyword">new</span> <span class="hljs-built_in">KwawaDocument</span>(context, frame));
+    <span class="hljs-keyword">return</span> doc.<span class="hljs-built_in">release</span>();
+  }
+
+ <span class="hljs-keyword">protected</span>:
+  <span class="hljs-built_in">KwawaDocument</span>(blink::ExecutionContext* context, blink::Frame* frame)
+      : blink::<span class="hljs-built_in">Document</span>(context, frame) {}
+
+  <span class="hljs-comment">// 在 DOM 解析完成后调用</span>
+  <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">finishedParsing</span><span class="hljs-params">()</span> <span class="hljs-keyword">override</span> </span>{
+    blink::Document::<span class="hljs-built_in">finishedParsing</span>();
+    
+    <span class="hljs-comment">// 在这里注入自定义脚本或修改 DOM</span>
+    <span class="hljs-built_in">InjectCustomScripts</span>();
+  }
+
+  <span class="hljs-comment">// 拦截资源加载</span>
+  <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">didReceiveTitle</span><span class="hljs-params">(<span class="hljs-type">const</span> WebString&amp; title)</span> <span class="hljs-keyword">override</span> </span>{
+    blink::Document::<span class="hljs-built_in">didReceiveTitle</span>(title);
+    <span class="hljs-comment">// 可以修改页面标题</span>
+    <span class="hljs-keyword">if</span> (title.<span class="hljs-built_in">Utf8</span>().<span class="hljs-built_in">find</span>(<span class="hljs-string">&quot;广告&quot;</span>) != std::string::npos) {
+      <span class="hljs-built_in">SetTitle</span>(WebString::<span class="hljs-built_in">FromUTF8</span>(<span class="hljs-string">&quot;蛙蛙浏览器 - 纯净阅读&quot;</span>));
+    }
+  }
+
+ <span class="hljs-keyword">private</span>:
+  <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">InjectCustomScripts</span><span class="hljs-params">()</span> </span>{
+    <span class="hljs-comment">// 在页面 body 末尾注入自定义 script</span>
+    <span class="hljs-keyword">auto</span> script = blink::HTMLScriptElement::<span class="hljs-built_in">Create</span>(*<span class="hljs-keyword">this</span>);
+    script-&gt;<span class="hljs-built_in">SetText</span>(<span class="hljs-string">&quot;console.log(&#x27;Kwawa Browser injected!&#x27;);&quot;</span>);
+    <span class="hljs-built_in">body</span>()-&gt;<span class="hljs-built_in">appendChild</span>(script);
+  }
+};</code></pre><h3 id="sec-14">3.3 切入点二：RenderView 拦截</h3><p><code>RenderView</code> 是 Blink 的顶级渲染对象，控制整个页面的布局。通过继承并重写关键方法，可以实现<strong>页面级定制</strong>：</p>
+<pre><code class="hljs language-cpp"><span class="hljs-comment">// 自定义 RenderView</span>
+<span class="hljs-keyword">class</span> <span class="hljs-title class_">KwawaRenderView</span> : <span class="hljs-keyword">public</span> blink::RenderView {
+ <span class="hljs-keyword">public</span>:
+  <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">layout</span><span class="hljs-params">()</span> <span class="hljs-keyword">override</span> </span>{
+    <span class="hljs-comment">// 在布局前修改 CSS 属性</span>
+    <span class="hljs-built_in">PreLayoutCustomization</span>();
+    
+    blink::RenderView::<span class="hljs-built_in">layout</span>();
+    
+    <span class="hljs-comment">// 布局后执行自定义逻辑</span>
+    <span class="hljs-built_in">PostLayoutProcessing</span>();
+  }
+
+ <span class="hljs-keyword">private</span>:
+  <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">PreLayoutCustomization</span><span class="hljs-params">()</span> </span>{
+    <span class="hljs-comment">// 例如：强制所有图片最大宽度为 100%</span>
+    <span class="hljs-keyword">auto</span>* document = <span class="hljs-built_in">GetDocument</span>();
+    <span class="hljs-keyword">if</span> (document) {
+      <span class="hljs-keyword">auto</span> images = document-&gt;<span class="hljs-built_in">getElementsByTagName</span>(<span class="hljs-string">&quot;img&quot;</span>);
+      <span class="hljs-keyword">for</span> (<span class="hljs-type">unsigned</span> i = <span class="hljs-number">0</span>; i &lt; images-&gt;<span class="hljs-built_in">length</span>(); ++i) {
+        <span class="hljs-keyword">auto</span>* img = <span class="hljs-built_in">toHTMLImageElement</span>(images-&gt;<span class="hljs-built_in">item</span>(i));
+        <span class="hljs-keyword">if</span> (img) {
+          img-&gt;<span class="hljs-built_in">style</span>()-&gt;<span class="hljs-built_in">setProperty</span>(<span class="hljs-string">&quot;max-width&quot;</span>, <span class="hljs-string">&quot;100%&quot;</span>, <span class="hljs-string">&quot;&quot;</span>);
+          img-&gt;<span class="hljs-built_in">style</span>()-&gt;<span class="hljs-built_in">setProperty</span>(<span class="hljs-string">&quot;height&quot;</span>, <span class="hljs-string">&quot;auto&quot;</span>, <span class="hljs-string">&quot;&quot;</span>);
+        }
+      }
+    }
+  }
+};</code></pre><h3 id="sec-15">3.4 切入点三：CSS 样式拦截</h3><p>在 Chromium 中，CSS 规则的加载和解析由 <code>CSSStyleSheet</code> 管理。你可以注入自定义规则：</p>
+<pre><code class="hljs language-cpp"><span class="hljs-comment">// 在 ContentBrowserClient 中注入全局 CSS</span>
+<span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">ChromeContentBrowserClient::OverridePageStyle</span><span class="hljs-params">(
+    blink::WebDocument&amp; document)</span> </span>{
+  
+  <span class="hljs-comment">// 1. 创建自定义 CSS 规则</span>
+  WebString custom_css = WebString::<span class="hljs-built_in">FromUTF8</span>(<span class="hljs-string">R&quot;(
+    /* 隐藏所有广告容器 */
+    [data-ad], .ad-container, #adsbox, .adsbygoogle {
+      display: none !important;
+      visibility: hidden !important;
+    }
+    /* 强制深色模式 */
+    @media (prefers-color-scheme: dark) {
+      body { background: #1a1a1a; color: #e0e0e0; }
+    }
+  )&quot;</span>);
+
+  <span class="hljs-comment">// 2. 注入到页面</span>
+  document.<span class="hljs-built_in">addStyleSheet</span>(custom_css);
+}</code></pre><p><strong>实际项目参考：</strong> AdBlocker Lite 的 <code>cosmetic-engine.js</code> 就是用 JS 层面实现的类似功能——通过 <code>document.adoptedStyleSheets</code> 注入 CSS 规则来隐藏广告元素。在 C++ 层做同样的事情性能更好，因为不需要等待 JS 执行。</p>
+<hr>
+<h2 id="sec-16">四、实战三：WebView 集成（安卓端定制的关键）</h2><p>Chromium 的安卓层定制离不开 <code>WebView</code>。Android 系统内置的 WebView 其实就是 Chromium 的一个子集：</p>
+<h3 id="sec-17">4.1 WebView 架构</h3><pre><code class="hljs language-text">Android WebView (System)
+├── Chromium Content Shell
+│   ├── RenderProcessHost（渲染进程）
+│   ├── BrowserPlugin（JNI 桥接层）
+│   └── WebViewClient（Java 回调）
+├── Java API
+│   ├── WebView.loadUrl()
+│   ├── WebView.addJavascriptInterface()
+│   └── WebViewClient.onPageFinished()
+└── JNI 绑定层（//content/public/android/）</code></pre><h3 id="sec-18">4.2 在 Kiwi Browser 中，WebView 被替换为完整的 Browser</h3><p>Kiwi Browser 的核心改动在 <code>chrome/android/java/src/org/chromium/chrome/browser/</code>：</p>
+<pre><code class="hljs language-java"><span class="hljs-comment">// Kiwi 的 CustomTabsService（支持 Chrome Custom Tabs 协议）</span>
+public <span class="hljs-keyword">class</span> <span class="hljs-title class_">KiwiCustomTabsService</span> <span class="hljs-keyword">extends</span> <span class="hljs-title class_ inherited__">CustomTabsService</span> {
+    @<span class="hljs-title class_">Override</span>
+    public boolean <span class="hljs-title function_">onNewIntent</span>(<span class="hljs-params">Intent intent</span>) {
+        <span class="hljs-comment">// 处理来自其他 App 的 Custom Tab 请求</span>
+        <span class="hljs-comment">// 这是浏览器扩展能力的核心入口</span>
+        <span class="hljs-title class_">String</span> uri = intent.<span class="hljs-title function_">getDataString</span>();
+        <span class="hljs-title function_">openInKiwi</span>(uri);
+        <span class="hljs-keyword">return</span> <span class="hljs-literal">true</span>;
+    }
+}</code></pre><h3 id="sec-19">4.3 自定义 WebViewClient 实现</h3><pre><code class="hljs language-java"><span class="hljs-comment">// 在 Kiwi Browser 中，你可以覆盖 WebViewClient</span>
+public <span class="hljs-keyword">class</span> <span class="hljs-title class_">KwawaWebViewClient</span> <span class="hljs-keyword">extends</span> <span class="hljs-title class_ inherited__">WebViewClient</span> {
+    @<span class="hljs-title class_">Override</span>
+    public <span class="hljs-title class_">WebResourceResponse</span> <span class="hljs-title function_">shouldInterceptRequest</span>(<span class="hljs-params">WebView view, 
+                                                       WebResourceRequest request</span>) {
+        <span class="hljs-title class_">String</span> url = request.<span class="hljs-title function_">getUrl</span>().<span class="hljs-title function_">toString</span>();
+        
+        <span class="hljs-comment">// 拦截特定 URL，返回自定义响应</span>
+        <span class="hljs-keyword">if</span> (url.<span class="hljs-title function_">contains</span>(<span class="hljs-string">&quot;/api/download&quot;</span>)) {
+            <span class="hljs-comment">// 网盘直链解析：拦截 API 请求，返回解析后的直链</span>
+            <span class="hljs-title class_">String</span> directLink = <span class="hljs-title function_">resolveDirectLink</span>(url);
+            <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">WebResourceResponse</span>(<span class="hljs-string">&quot;application/json&quot;</span>, <span class="hljs-string">&quot;utf-8&quot;</span>,
+                <span class="hljs-title class_">ByteArrayInputStream</span>.<span class="hljs-title function_">of</span>(
+                    (<span class="hljs-string">&quot;{\&quot;url\&quot;:\&quot;&quot;</span> + directLink + <span class="hljs-string">&quot;\&quot;}&quot;</span>).<span class="hljs-title function_">getBytes</span>()));
+        }
+        
+        <span class="hljs-comment">// 广告拦截：返回空响应</span>
+        <span class="hljs-keyword">if</span> (<span class="hljs-title function_">isAdUrl</span>(url)) {
+            <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">WebResourceResponse</span>(<span class="hljs-string">&quot;text/plain&quot;</span>, <span class="hljs-string">&quot;utf-8&quot;</span>,
+                <span class="hljs-keyword">new</span> <span class="hljs-title class_">ByteArrayInputStream</span>(<span class="hljs-keyword">new</span> byte[<span class="hljs-number">0</span>]));
+        }
+        
+        <span class="hljs-keyword">return</span> <span class="hljs-variable language_">super</span>.<span class="hljs-title function_">shouldInterceptRequest</span>(view, request);
+    }
+}</code></pre><p><strong>与 declarativeNetRequest 的关系：</strong> <code>shouldInterceptRequest</code> 是<strong>应用层</strong>拦截（Java/Kotlin 代码），<code>declarativeNetRequest</code> 是<strong>引擎层</strong>拦截（C++ 网络栈）。两者互补——DNR 处理大规模规则匹配，<code>shouldInterceptRequest</code> 处理复杂的业务逻辑（如网盘直链解析）。</p>
+<hr>
+<h2 id="sec-20">五、实战四：修改 BUILD.gn 构建配置</h2><p>Chromium 使用 GN/Ninja 构建系统。任何定制都需要在 <code>BUILD.gn</code> 中注册新文件和新目标：</p>
+<pre><code class="hljs language-gn"><span class="hljs-comment"># chrome/BUILD.gn 中添加自定义模块</span>
+
+<span class="hljs-comment"># 1. 定义源文件集合</span>
+config(<span class="hljs-string">&quot;custom_scheme_config&quot;</span>) {
+  include_dirs = [ <span class="hljs-string">&quot;//chrome/browser/custom_scheme&quot;</span> ]
+  defines = [ <span class="hljs-string">&quot;CHROME_CUSTOM_SCHEME=1&quot;</span> ]
+}
+
+source_set(<span class="hljs-string">&quot;custom_scheme&quot;</span>) {
+  sources = [
+    <span class="hljs-string">&quot;custom_scheme/custom_scheme_handler.cc&quot;</span>,
+    <span class="hljs-string">&quot;custom_scheme/custom_scheme_handler.h&quot;</span>,
+    <span class="hljs-string">&quot;custom_scheme/kwawa_protocol_handler.cc&quot;</span>,
+    <span class="hljs-string">&quot;custom_scheme/kwawa_protocol_handler.h&quot;</span>,
+  ]
+  
+  configs -= [ <span class="hljs-string">&quot;//build/config/compiler:wchar_config&quot;</span> ]
+  configs += [ <span class="hljs-string">&quot;:custom_scheme_config&quot;</span> ]
+  
+  deps = [
+    <span class="hljs-string">&quot;//base&quot;</span>,
+    <span class="hljs-string">&quot;//content/public/browser&quot;</span>,
+    <span class="hljs-string">&quot;//net&quot;</span>,
+  ]
+}
+
+<span class="hljs-comment"># 2. 在 chrome_browser 目标中引入</span>
+executable(<span class="hljs-string">&quot;chrome&quot;</span>) {
+  <span class="hljs-comment"># ...</span>
+  deps += [ <span class="hljs-string">&quot;:custom_scheme&quot;</span> ]
+}</code></pre><p><strong>关键理解：</strong> 修改 <code>BUILD.gn</code> 后运行 <code>gn gen</code> 重新生成 Ninja 文件。这就是 Kiwi Browser 编译中&quot;增量编译 2 分 34 秒&quot;的原理——只有修改过的 <code>.cc</code> 文件和其 <code>BUILD.gn</code> 会重新编译。</p>
+<hr>
+<h2 id="sec-21">六、从开源项目学习的实践路径</h2><h3 id="sec-22">6.1 推荐研究的开源项目</h3><table>
+<thead>
+<tr>
+<th>项目</th>
+<th>学习重点</th>
+<th>关键文件</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Kiwi Browser</strong></td>
+<td>安卓层定制、扩展支持、DownloadManager</td>
+<td><code>chrome/android/java/src/.../browser/download/</code></td>
+</tr>
+<tr>
+<td><strong>Supermium</strong></td>
+<td>Win32 兼容层、旧版 Windows 适配</td>
+<td><code>chrome/browser/win/</code></td>
+</tr>
+<tr>
+<td><strong>Brave Browser</strong></td>
+<td>内置广告拦截、HTTPS-First 模式</td>
+<td><code>chrome/browser/brave/</code></td>
+</tr>
+<tr>
+<td><strong>Ghostery Privacy Browser</strong></td>
+<td>隐私保护、Tracker 拦截</td>
+<td><code>chrome/browser/ghostery/</code></td>
+</tr>
+<tr>
+<td><strong>Waterfox</strong></td>
+<td>旧版扩展兼容、隐私定制</td>
+<td><code>browser/extensions/</code></td>
+</tr>
+</tbody></table>
+<h3 id="sec-23">6.2 Kiwi Browser 扩展支持的源码路径</h3><pre><code class="hljs language-text">chrome/android/
+├── java/
+│   └── src/
+│       └── org/chromium/chrome/browser/
+│           ├── extensions/          ← 扩展核心
+│           │   ├── ChromeExtensionManager.java
+│           │   └── ExtensionMessageHandler.java
+│           ├── download/            ← 下载管理器（资源浏览器关键）
+│           │   ├── DownloadServiceImpl.java
+│           │   └── DownloadDialog.java
+│           └── search/              ← 搜索引擎
+│               ├── SearchEngineManager.java
+│               └── DefaultSearchManager.java</code></pre><h3 id="sec-24">6.3 动手实验清单</h3><pre><code class="hljs language-text">□ 1. 在 Kiwi Browser 源码中找到 DefaultSearchManager.java
+     → 理解如何修改默认搜索引擎
+   
+□ 2. 阅读 chrome/browser/download/DownloadServiceImpl.java
+     → 理解下载管理的 Android 层实现
+   
+□ 3. 在 content/public/browser/ 中找到 ProtocolHandler
+     → 理解自定义协议的注册流程
+   
+□ 4. 阅读 blink/core/document.h
+     → 理解 Document 的生命周期钩子
+   
+□ 5. 修改 BUILD.gn 添加一个自定义 source_set
+     → 体验 Chromium 构建系统的定制流程
+   
+□ 6. 在 chrome/android/ 中找到 WebContentsDelegateAdapter
+     → 理解如何拦截页面导航和弹窗</code></pre><hr>
+<h2 id="sec-25">七、与 Hysteria 经验的关联</h2><p>在 Hysteria-rs 项目中，我 fork 并修改了 Quinn（Rust QUIC 实现）的协议层：</p>
+<pre><code class="hljs language-rust"><span class="hljs-comment">// 修改 quinn-proto 的 Connection 状态机</span>
+<span class="hljs-keyword">impl</span> <span class="hljs-title class_">Connection</span> {
+    <span class="hljs-keyword">fn</span> <span class="hljs-title function_">handle_frame</span>(&amp;<span class="hljs-keyword">mut</span> <span class="hljs-keyword">self</span>, frame: Frame) {
+        <span class="hljs-keyword">match</span> frame {
+            Frame::<span class="hljs-title function_ invoke__">Datagram</span>(d) =&gt; <span class="hljs-keyword">self</span>.<span class="hljs-title function_ invoke__">handle_datagram</span>(d),
+            <span class="hljs-comment">// 自定义拥塞控制逻辑</span>
+            Frame::<span class="hljs-title function_ invoke__">AckRanges</span>(ranges) =&gt; <span class="hljs-keyword">self</span>.bbr.<span class="hljs-title function_ invoke__">handle_ack</span>(ranges),
+            _ =&gt; {}
+        }
+    }
+}</code></pre><p>这和修改 Chromium 的 <code>net/</code> 层（如上一篇博客所述）本质上是<strong>同一类工作</strong>：理解协议栈的状态机，找到正确的 hook 点，注入自定义逻辑。只不过 Hysteria 是在 Rust 层面操作 QUIC，而 Chromium 定制是在 C++ 层面操作 HTTP/HTTPS/QUIC。</p>
+<p><strong>核心能力迁移：</strong></p>
+<ul>
+<li>Quinn 的 <code>Connection</code> ↔ Chromium 的 <code>URLRequest</code>（都是请求状态机）</li>
+<li>Quinn 的 <code>TransportConfig</code> ↔ Chromium 的 <code>NetworkQualityEstimator</code>（都是网络参数配置）</li>
+<li>Quinn 的 <code>Stream</code> ↔ Chromium 的 <code>HttpStream</code>（都是数据传输通道）</li>
+</ul>
+<hr>
+<h2 id="sec-26">八、总结：Chromium 内核定制能力矩阵</h2><pre><code class="hljs language-text">┌──────────────────────────────────────────────────────────┐
+│              Chromium 内核定制能力矩阵                      │
+├────────────────────┬───────────────┬─────────────────────┤
+│ 层级               │ 关键类/API    │ 典型应用场景           │
+├────────────────────┼───────────────┼─────────────────────┤
+│ content/           │ ProtocolHandler│ 自定义协议、导航拦截  │
+│                    │ WebContents   │ 页面生命周期管理      │
+│                    │ NavigationController │ 前进/后退/刷新 │
+├────────────────────┼───────────────┼─────────────────────┤
+│ blink/             │ Document      │ DOM 注入、标题修改    │
+│                    │ RenderView    │ 布局拦截、CSS 注入    │
+│                    │ CSSStyleSheet │ 全局样式注入          │
+├────────────────────┼───────────────┼─────────────────────┤
+│ net/               │ URLRequest    │ 请求拦截/修改         │
+│                    │ HttpStream    │ 协议层定制            │
+│                    │ ProxyResolver │ 代理管理              │
+├────────────────────┼───────────────┼─────────────────────┤
+│ chrome/android/    │ WebViewClient │ Android 层拦截        │
+│                    │ DownloadManager│ 下载管理             │
+│                    │ SearchEngine  │ 搜索引擎定制          │
+└────────────────────┴───────────────┴─────────────────────┘</code></pre><p>Chromium 的内核定制不是&quot;改几行代码&quot;那么简单——它需要理解整个多进程架构、IPC 通信机制、渲染管线流程。但一旦理解了这些，你会发现每个定制需求都能在正确的层级找到合适的 hook 点。</p>
+<hr>
+<p><em>参考项目：Kiwi Browser (github.com/kiwibrowser/src.next), Brave Browser, Supermium, Chromium (chromium.org), Hysteria-rs (github.com/differs/hysteria-rs)</em></p>
+
+    </div>
+    <footer class="post-footer">
+      <span>本文为静态版，供抓取与检索；交互版请访问 <a href="/post/chromium-content-blink-customization/">/post/chromium-content-blink-customization/</a></span>
+      <a href="https://github.com/differs">GitHub</a>
+    </footer>
+  </article>
+</div>
+<footer class="site-footer">differs' blog — 浏览器工程实践笔记 · <a href="/">首页</a></footer>
+</body>
+</html>

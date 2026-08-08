@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chrome 广告拦截技术深度解析：从 webRequest 到 declarativeNetRequest · differs' blog</title>
+<meta name="description" content="一、广告拦截的核心机制：net::ERRBLOCKEDBYCLIENT 当你使用 Chrome 打开一个网站，打开开发者工具的控制台，有时会看到： 这不是网络错误，而是客户端主动拦截。Chrome 的 net/ 网络栈在收到拦截指令后，会立即中止请求并返回 ERRBLOCKEDBYCLIENT 错误码，相当于在请求发出之前就把它掐断了。">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://blog.wedevs.org/articles/adblock-declarative-net-request.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Chrome 广告拦截技术深度解析：从 webRequest 到 declarativeNetRequest","datePublished":"2026-05-10","description":"一、广告拦截的核心机制：net::ERRBLOCKEDBYCLIENT 当你使用 Chrome 打开一个网站，打开开发者工具的控制台，有时会看到： 这不是网络错误，而是客户端主动拦截。Chrome 的 net/ 网络栈在收到拦截指令后，会立即中止请求并返回 ERRBLOCKEDBYCLIENT 错误码，相当于在请求发出之前就把它掐断了。","url":"https://blog.wedevs.org/articles/adblock-declarative-net-request.html","author":{"@type":"Person","name":"differs","url":"https://github.com/differs"}}</script>
+<style>
+
+:root {
+  --bg: #f7f8fa;
+  --card: #ffffff;
+  --text: #1f2328;
+  --text-light: #57606a;
+  --text-muted: #8b949e;
+  --border: #d0d7de;
+  --accent: #1a56db;
+  --accent-bg: #eef4ff;
+  --code-bg: #f6f8fa;
+  --quote-bg: #f0f4ff;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  font-family: "Noto Sans CJK SC", "Source Han Sans SC", "PingFang SC",
+    "Microsoft YaHei", "Hiragino Sans GB", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.85;
+  font-size: 16px;
+}
+.site-header {
+  border-bottom: 1px solid var(--border);
+  background: var(--card);
+  position: sticky; top: 0; z-index: 10;
+}
+.site-header .inner {
+  max-width: 860px; margin: 0 auto; padding: 14px 24px;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+.site-header .site-title { font-weight: 700; font-size: 15px; color: var(--text); text-decoration: none; }
+.site-header .site-title:hover { color: var(--accent); }
+.site-header .site-sub { font-size: 12px; color: var(--text-muted); }
+.site-header .back-link { font-size: 13px; color: var(--accent); text-decoration: none; }
+.site-header .back-link:hover { text-decoration: underline; }
+.container { max-width: 860px; margin: 0 auto; padding: 40px 24px 64px; }
+article.post { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 40px 48px; }
+.post-header { border-bottom: 1px solid var(--border); padding-bottom: 20px; margin-bottom: 24px; }
+.post-title { font-size: 26px; line-height: 1.4; margin: 0 0 10px; }
+.post-meta { font-size: 13px; color: var(--text-light); display: flex; gap: 16px; flex-wrap: wrap; }
+.post-meta a { color: var(--accent); text-decoration: none; }
+.post-meta a:hover { text-decoration: underline; }
+.toc {
+  background: var(--accent-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin: 0 0 28px;
+  font-size: 14px;
+}
+.toc summary { cursor: pointer; font-weight: 600; color: var(--text); margin-bottom: 8px; }
+.toc ul { margin: 0; padding-left: 18px; }
+.toc li { margin: 3px 0; }
+.toc a { color: var(--accent); text-decoration: none; }
+.toc a:hover { text-decoration: underline; }
+.article-body { font-size: 16px; }
+.article-body > *:first-child { margin-top: 0; }
+.article-body h1, .article-body h2, .article-body h3, .article-body h4 {
+  line-height: 1.45; margin: 1.6em 0 0.6em; scroll-margin-top: 80px;
+}
+.article-body h2 { font-size: 22px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+.article-body h3 { font-size: 18px; }
+.article-body h4 { font-size: 16px; }
+.article-body p { margin: 0.8em 0; }
+.article-body a { color: var(--accent); }
+.article-body ul, .article-body ol { padding-left: 26px; margin: 0.8em 0; }
+.article-body li { margin: 0.3em 0; }
+.article-body blockquote {
+  margin: 1em 0; padding: 10px 18px;
+  background: var(--quote-bg);
+  border-left: 4px solid var(--accent);
+  border-radius: 0 8px 8px 0;
+  color: var(--text-light);
+}
+.article-body blockquote p { margin: 0.3em 0; }
+.article-body table { border-collapse: collapse; width: 100%; margin: 1em 0; font-size: 14px; display: block; overflow-x: auto; }
+.article-body th, .article-body td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; }
+.article-body th { background: var(--accent-bg); font-weight: 600; }
+.article-body tr:nth-child(even) td { background: #fafbfc; }
+.article-body code {
+  font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", "Source Code Pro", Consolas, monospace;
+  font-size: 0.88em;
+  background: var(--code-bg);
+  padding: 2px 6px; border-radius: 4px;
+}
+.article-body pre {
+  margin: 1.2em 0; padding: 0; border-radius: 8px; overflow-x: auto;
+  background: #24292e; line-height: 1.6; font-size: 13.5px;
+}
+.article-body pre code {
+  display: block; padding: 16px 18px; background: none;
+  color: #e6edf3; font-size: inherit; overflow: visible;
+}
+.article-body hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+.article-body img { max-width: 100%; border-radius: 8px; }
+.post-footer {
+  margin-top: 36px; padding-top: 20px;
+  border-top: 1px solid var(--border);
+  font-size: 13px; color: var(--text-light);
+  display: flex; gap: 18px; flex-wrap: wrap;
+}
+.post-footer a { color: var(--accent); text-decoration: none; }
+.post-footer a:hover { text-decoration: underline; }
+.site-footer { text-align: center; font-size: 12px; color: var(--text-muted); padding: 0 24px 40px; }
+@media (max-width: 640px) {
+  article.post { padding: 24px 18px; }
+  .post-title { font-size: 21px; }
+  .container { padding: 20px 12px 48px; }
+}
+@media print {
+  body { background: #fff; }
+  article.post { border: none; padding: 0; }
+  .site-header { position: static; }
+  pre { white-space: pre-wrap; word-break: break-all; }
+}
+
+pre code.hljs {
+  display: block;
+  overflow-x: auto;
+  padding: 1em
+}
+code.hljs {
+  padding: 3px 5px
+}
+/*!
+  Theme: GitHub Dark
+  Description: Dark theme as seen on github.com
+  Author: github.com
+  Maintainer: @Hirse
+  Updated: 2021-05-15
+
+  Outdated base version: https://github.com/primer/github-syntax-dark
+  Current colors taken from GitHub's CSS
+*/
+.hljs {
+  color: #c9d1d9;
+  background: #0d1117
+}
+.hljs-doctag,
+.hljs-keyword,
+.hljs-meta .hljs-keyword,
+.hljs-template-tag,
+.hljs-template-variable,
+.hljs-type,
+.hljs-variable.language_ {
+  /* prettylights-syntax-keyword */
+  color: #ff7b72
+}
+.hljs-title,
+.hljs-title.class_,
+.hljs-title.class_.inherited__,
+.hljs-title.function_ {
+  /* prettylights-syntax-entity */
+  color: #d2a8ff
+}
+.hljs-attr,
+.hljs-attribute,
+.hljs-literal,
+.hljs-meta,
+.hljs-number,
+.hljs-operator,
+.hljs-variable,
+.hljs-selector-attr,
+.hljs-selector-class,
+.hljs-selector-id {
+  /* prettylights-syntax-constant */
+  color: #79c0ff
+}
+.hljs-regexp,
+.hljs-string,
+.hljs-meta .hljs-string {
+  /* prettylights-syntax-string */
+  color: #a5d6ff
+}
+.hljs-built_in,
+.hljs-symbol {
+  /* prettylights-syntax-variable */
+  color: #ffa657
+}
+.hljs-comment,
+.hljs-code,
+.hljs-formula {
+  /* prettylights-syntax-comment */
+  color: #8b949e
+}
+.hljs-name,
+.hljs-quote,
+.hljs-selector-tag,
+.hljs-selector-pseudo {
+  /* prettylights-syntax-entity-tag */
+  color: #7ee787
+}
+.hljs-subst {
+  /* prettylights-syntax-storage-modifier-import */
+  color: #c9d1d9
+}
+.hljs-section {
+  /* prettylights-syntax-markup-heading */
+  color: #1f6feb;
+  font-weight: bold
+}
+.hljs-bullet {
+  /* prettylights-syntax-markup-list */
+  color: #f2cc60
+}
+.hljs-emphasis {
+  /* prettylights-syntax-markup-italic */
+  color: #c9d1d9;
+  font-style: italic
+}
+.hljs-strong {
+  /* prettylights-syntax-markup-bold */
+  color: #c9d1d9;
+  font-weight: bold
+}
+.hljs-addition {
+  /* prettylights-syntax-markup-inserted */
+  color: #aff5b4;
+  background-color: #033a16
+}
+.hljs-deletion {
+  /* prettylights-syntax-markup-deleted */
+  color: #ffdcd7;
+  background-color: #67060c
+}
+.hljs-char.escape_,
+.hljs-link,
+.hljs-params,
+.hljs-property,
+.hljs-punctuation,
+.hljs-tag {
+  /* purposely ignored */
+  
+}
+</style>
+</head>
+<body>
+<header class="site-header">
+  <div class="inner">
+    <a class="site-title" href="/">differs' blog <span class="site-sub">浏览器工程实践笔记</span></a>
+    <a class="back-link" href="/">← 返回博客</a>
+  </div>
+</header>
+<div class="container">
+  <article class="post">
+    <header class="post-header">
+      <h1 class="post-title">Chrome 广告拦截技术深度解析：从 webRequest 到 declarativeNetRequest</h1>
+      <div class="post-meta">
+        <span>📅 2026-05-10</span>
+        <a href="/">differs' blog</a>
+        <a href="/post/adblock-declarative-net-request/">交互版（SPA）</a>
+      </div>
+    </header>
+    <nav class="toc" aria-label="目录"><details open><summary>目录</summary><ul><li style="margin-left:-14px"><a href="#sec-1">Chrome 广告拦截技术深度解析：从 webRequest 到 declarativeNetRequest</a></li><li style="margin-left:0px"><a href="#sec-2">一、广告拦截的核心机制：net::ERRBLOCKEDBYCLIENT</a></li><li style="margin-left:0px"><a href="#sec-3">二、两大拦截 API 对比</a></li><li style="margin-left:14px"><a href="#sec-4">2.1 chrome.webRequest（MV2 时代）</a></li><li style="margin-left:14px"><a href="#sec-5">2.2 chrome.declarativeNetRequest（MV3 标准）</a></li><li style="margin-left:0px"><a href="#sec-6">三、uBlock Origin 深度解析（65.9k ⭐）</a></li><li style="margin-left:14px"><a href="#sec-7">3.1 架构概览</a></li><li style="margin-left:14px"><a href="#sec-8">3.2 静态网络过滤引擎（核心）</a></li><li style="margin-left:14px"><a href="#sec-9">3.3 EasyList 规则语法</a></li><li style="margin-left:14px"><a href="#sec-10">3.4 三种规则类型在 Chromium 中的映射</a></li><li style="margin-left:0px"><a href="#sec-11">四、Manifest V3 对广告拦截的影响</a></li><li style="margin-left:14px"><a href="#sec-12">4.1 核心变化</a></li><li style="margin-left:14px"><a href="#sec-13">4.2 uBlock Origin Lite（MV3 适配版）</a></li><li style="margin-left:14px"><a href="#sec-14">4.3 Replace Google CDN 项目参考</a></li><li style="margin-left:0px"><a href="#sec-15">五、网盘直链解析</a></li><li style="margin-left:14px"><a href="#sec-16">5.1 核心原理</a></li><li style="margin-left:14px"><a href="#sec-17">5.2 实现方案对比</a></li><li style="margin-left:14px"><a href="#sec-18">5.3 Content Script 拦截示例</a></li><li style="margin-left:0px"><a href="#sec-19">六、推荐学习路径</a></li><li style="margin-left:14px"><a href="#sec-20">6.1 必读开源项目</a></li><li style="margin-left:14px"><a href="#sec-21">6.2 动手实验</a></li><li style="margin-left:0px"><a href="#sec-22">七、总结</a></li></ul></details></nav>
+    <div class="article-body">
+<h1 id="sec-1">Chrome 广告拦截技术深度解析：从 webRequest 到 declarativeNetRequest</h1><h2 id="sec-2">一、广告拦截的核心机制：net::ERR_BLOCKED_BY_CLIENT</h2><p>当你使用 Chrome 打开一个网站，打开开发者工具的控制台，有时会看到：</p>
+<pre><code class="hljs language-text">Failed to load resource: net::ERR_BLOCKED_BY_CLIENT</code></pre><p>这不是网络错误，而是<strong>客户端主动拦截</strong>。Chrome 的 <code>net/</code> 网络栈在收到拦截指令后，会立即中止请求并返回 <code>ERR_BLOCKED_BY_CLIENT</code> 错误码，相当于在请求发出之前就把它掐断了。</p>
+<pre><code class="hljs language-text">请求发起
+  ↓
+Extension 注册了 webRequest/declarativeNetRequest 监听
+  ↓
+匹配拦截规则？
+  ├── 是 → 返回 ERR_BLOCKED_BY_CLIENT（请求从未到达服务器）
+  └── 否 → 正常发送请求</code></pre><hr>
+<h2 id="sec-3">二、两大拦截 API 对比</h2><h3 id="sec-4">2.1 chrome.webRequest（MV2 时代）</h3><p>MV2 时代的拦截方式，允许扩展<strong>同步阻塞</strong>请求：</p>
+<pre><code class="hljs language-javascript"><span class="hljs-comment">// manifest.json (MV2)</span>
+{
+  <span class="hljs-string">&quot;permissions&quot;</span>: [<span class="hljs-string">&quot;webRequest&quot;</span>, <span class="hljs-string">&quot;webRequestBlocking&quot;</span>],
+  <span class="hljs-string">&quot;host_permissions&quot;</span>: [<span class="hljs-string">&quot;*://*/*&quot;</span>]
+}
+
+<span class="hljs-comment">// background.js</span>
+chrome.<span class="hljs-property">webRequest</span>.<span class="hljs-property">onBeforeRequest</span>.<span class="hljs-title function_">addListener</span>(
+  <span class="hljs-function">(<span class="hljs-params">details</span>) =&gt;</span> {
+    <span class="hljs-keyword">if</span> (<span class="hljs-title function_">isAdUrl</span>(details.<span class="hljs-property">url</span>)) {
+      <span class="hljs-keyword">return</span> { <span class="hljs-attr">cancel</span>: <span class="hljs-literal">true</span> };  <span class="hljs-comment">// 同步拦截</span>
+    }
+    <span class="hljs-keyword">return</span> { <span class="hljs-attr">cancel</span>: <span class="hljs-literal">false</span> };
+  },
+  { <span class="hljs-attr">urls</span>: [<span class="hljs-string">&quot;&lt;all_urls&gt;&quot;</span>] },
+  [<span class="hljs-string">&quot;blocking&quot;</span>]  <span class="hljs-comment">// ← 关键：blocking 权限</span>
+);</code></pre><p><strong>优点：</strong> 灵活，可以运行任意 JS 逻辑判断<br><strong>缺点：</strong> 性能开销大，每次请求都要经过 JS 事件循环</p>
+<h3 id="sec-5">2.2 chrome.declarativeNetRequest（MV3 标准）</h3><p>MV3 引入了声明式 API，将过滤规则<strong>提前编译</strong>，在网络栈内部直接匹配：</p>
+<pre><code class="hljs language-json"><span class="hljs-comment">// manifest.json (MV3)</span>
+<span class="hljs-punctuation">{</span>
+  <span class="hljs-attr">&quot;permissions&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">[</span><span class="hljs-string">&quot;declarativeNetRequest&quot;</span><span class="hljs-punctuation">]</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;host_permissions&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">[</span><span class="hljs-string">&quot;*://*/*&quot;</span><span class="hljs-punctuation">]</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;declarative_net_request&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+    <span class="hljs-attr">&quot;rule_resources&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">[</span><span class="hljs-punctuation">{</span>
+      <span class="hljs-attr">&quot;id&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;ruleset_1&quot;</span><span class="hljs-punctuation">,</span>
+      <span class="hljs-attr">&quot;enabled&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-literal"><span class="hljs-keyword">true</span></span><span class="hljs-punctuation">,</span>
+      <span class="hljs-attr">&quot;path&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;rules.json&quot;</span>
+    <span class="hljs-punctuation">}</span><span class="hljs-punctuation">]</span>
+  <span class="hljs-punctuation">}</span>
+<span class="hljs-punctuation">}</span>
+
+<span class="hljs-comment">// rules.json</span>
+<span class="hljs-punctuation">[</span><span class="hljs-punctuation">{</span>
+  <span class="hljs-attr">&quot;id&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">1</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;priority&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">1</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;action&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+    <span class="hljs-attr">&quot;type&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;block&quot;</span>
+  <span class="hljs-punctuation">}</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;condition&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+    <span class="hljs-attr">&quot;urlFilter&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;||doubleclick.net&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;resourceTypes&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">[</span><span class="hljs-string">&quot;script&quot;</span><span class="hljs-punctuation">,</span> <span class="hljs-string">&quot;image&quot;</span><span class="hljs-punctuation">]</span>
+  <span class="hljs-punctuation">}</span>
+<span class="hljs-punctuation">}</span><span class="hljs-punctuation">]</span></code></pre><p><strong>优点：</strong> 高性能（C++ 层匹配，不经过 JS）、隐私更好<br><strong>缺点：</strong> 规则数量受限（静态 30 万条 + 动态 5 万条 + 会话 5 万条）</p>
+<hr>
+<h2 id="sec-6">三、uBlock Origin 深度解析（65.9k ⭐）</h2><p><code>https://github.com/gorhill/uBlock</code></p>
+<p>uBlock Origin 是目前最优秀的广告拦截器，它的架构值得深入学习：</p>
+<h3 id="sec-7">3.1 架构概览</h3><pre><code class="hljs language-text">uBlock Origin
+├── src/
+│   ├── js/
+│   │   ├── static-net-filtering.js  ← 核心：静态网络过滤引擎
+│   │   ├── dynamic-net-filtering.js ← 动态网络过滤（高级用户防火墙）
+│   │   ├── cosmetic-filtering.js    ← 元素隐藏（CSS 选择器）
+│   │   ├── scriptlet-filtering.js   ← 脚本注入过滤
+│   │   ├── url-net-filtering.js     ← URL 级别过滤
+│   │   ├── redirect-engine.js       ← 资源重定向（替换为空白资源）
+│   │   └── snfe.js                  ← 序列化网络过滤引擎
+│   ├── web_accessible_resources/    ← 替换用的空白资源
+│   └── assets/                      ← 预编译的规则列表
+├── dist/                            ← 构建产物
+└── platform/                        ← 浏览器适配层</code></pre><h3 id="sec-8">3.2 静态网络过滤引擎（核心）</h3><p>uBlock 的核心是 <code>static-net-filtering.js</code>，它将过滤规则编译成 <strong>trie（字典树）</strong> 数据结构，实现 O(n) 的匹配速度：</p>
+<pre><code class="hljs language-javascript"><span class="hljs-comment">// 简化的过滤引擎原理</span>
+<span class="hljs-keyword">class</span> <span class="hljs-title class_">StaticNetFilteringEngine</span> {
+  <span class="hljs-title function_">constructor</span>(<span class="hljs-params"></span>) {
+    <span class="hljs-variable language_">this</span>.<span class="hljs-property">filterTrie</span> = <span class="hljs-keyword">new</span> <span class="hljs-title class_">Map</span>();  <span class="hljs-comment">// 基于 URL 片段的 trie 树</span>
+    <span class="hljs-variable language_">this</span>.<span class="hljs-property">filterCount</span> = <span class="hljs-number">0</span>;
+  }
+
+  <span class="hljs-comment">// 添加过滤规则</span>
+  <span class="hljs-title function_">addFilter</span>(<span class="hljs-params">pattern</span>) {
+    <span class="hljs-comment">// 将规则 &quot;||example.com^&quot; 转换为 trie 节点</span>
+    <span class="hljs-keyword">const</span> tokens = <span class="hljs-variable language_">this</span>.<span class="hljs-title function_">tokenize</span>(pattern);
+    <span class="hljs-keyword">let</span> node = <span class="hljs-variable language_">this</span>.<span class="hljs-property">filterTrie</span>;
+    <span class="hljs-keyword">for</span> (<span class="hljs-keyword">const</span> token <span class="hljs-keyword">of</span> tokens) {
+      <span class="hljs-keyword">if</span> (!node.<span class="hljs-title function_">has</span>(token)) {
+        node.<span class="hljs-title function_">set</span>(token, <span class="hljs-keyword">new</span> <span class="hljs-title class_">Map</span>());
+      }
+      node = node.<span class="hljs-title function_">get</span>(token);
+    }
+    node.<span class="hljs-property">_actions</span> = node.<span class="hljs-property">_actions</span> || [];
+    node.<span class="hljs-property">_actions</span>.<span class="hljs-title function_">push</span>(patterns.<span class="hljs-property">type</span> === <span class="hljs-string">&#x27;block&#x27;</span> ? <span class="hljs-string">&#x27;block&#x27;</span> : <span class="hljs-string">&#x27;allow&#x27;</span>);
+  }
+
+  <span class="hljs-comment">// 匹配 URL</span>
+  <span class="hljs-title function_">match</span>(<span class="hljs-params">url</span>) {
+    <span class="hljs-keyword">const</span> tokens = <span class="hljs-variable language_">this</span>.<span class="hljs-title function_">tokenize</span>(url);
+    <span class="hljs-comment">// 在 trie 中搜索，优先匹配高优先级规则</span>
+    <span class="hljs-keyword">let</span> node = <span class="hljs-variable language_">this</span>.<span class="hljs-property">filterTrie</span>;
+    <span class="hljs-comment">// ... 遍历 URL 的每个 token，在 trie 中查找</span>
+    <span class="hljs-keyword">return</span> <span class="hljs-string">&#x27;block&#x27;</span>;  <span class="hljs-comment">// 或 &#x27;allow&#x27;</span>
+  }
+}</code></pre><h3 id="sec-9">3.3 EasyList 规则语法</h3><p>广告拦截规则有三种核心格式：</p>
+<pre><code class="hljs language-text"># 1. 网络请求拦截（最常用）
+||example.com^$third-party    # 拦截 example.com 的第三方请求
+||ads.example.com^            # 拦截 ads.example.com 所有请求
+google-analytics.com^         # 拦截包含此域名的任何请求
+
+# 2. 元素隐藏（CSS 选择器）
+##.ad-banner                  # 隐藏 class=&quot;ad-banner&quot; 的元素
+##div[class*=&quot;advertisement&quot;]  # 隐藏 class 包含 advertisement 的 div
+example.com##.sidebar-ad     # 只在 example.com 生效
+
+# 3. 脚本注入（高级）
+example.com##+js(set-timeout.js)  # 注入脚本覆盖计时器</code></pre><h3 id="sec-10">3.4 三种规则类型在 Chromium 中的映射</h3><table>
+<thead>
+<tr>
+<th>规则类型</th>
+<th>Chromium 实现</th>
+<th>API</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>URL 拦截</td>
+<td><code>declarativeNetRequest</code> 的 <code>block</code> action</td>
+<td>C++ 网络层</td>
+</tr>
+<tr>
+<td>元素隐藏</td>
+<td>Content Script 注入 CSS</td>
+<td>渲染进程</td>
+</tr>
+<tr>
+<td>脚本注入</td>
+<td>Content Script 注入 JS</td>
+<td>渲染进程</td>
+</tr>
+</tbody></table>
+<hr>
+<h2 id="sec-11">四、Manifest V3 对广告拦截的影响</h2><h3 id="sec-12">4.1 核心变化</h3><pre><code class="hljs language-text">MV2                          MV3
+─────────────────────────  ─────────────────────────
+webRequest + blocking        declarativeNetRequest
+background page (常驻)       Service Worker (事件驱动)
+任意 JS 判断规则             静态 JSON 编译规则
+无限制规则数量               静态 30 万 + 动态 5 万
+手动更新规则                规则列表自动更新</code></pre><h3 id="sec-13">4.2 uBlock Origin Lite（MV3 适配版）</h3><p>uBO 的 MV3 版本使用 <code>declarativeNetRequest</code> 重新实现了过滤引擎：</p>
+<pre><code class="hljs language-json"><span class="hljs-comment">// uBO Lite 输出的编译后规则</span>
+<span class="hljs-punctuation">{</span>
+  <span class="hljs-attr">&quot;id&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">89342</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;priority&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">10000</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;action&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+    <span class="hljs-attr">&quot;type&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;block&quot;</span>
+  <span class="hljs-punctuation">}</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;condition&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+    <span class="hljs-attr">&quot;urlFilter&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;||example.com^*/ad/*&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;resourceTypes&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">[</span><span class="hljs-string">&quot;script&quot;</span><span class="hljs-punctuation">,</span> <span class="hljs-string">&quot;image&quot;</span><span class="hljs-punctuation">,</span> <span class="hljs-string">&quot;sub_frame&quot;</span><span class="hljs-punctuation">]</span>
+  <span class="hljs-punctuation">}</span>
+<span class="hljs-punctuation">}</span></code></pre><p><strong>挑战：</strong> 30 万条静态规则限制意味着需要更智能的规则编译策略。</p>
+<h3 id="sec-14">4.3 Replace Google CDN 项目参考</h3><p><code>https://github.com/justjavac/ReplaceGoogleCDN</code></p>
+<p>一个轻量级的 declarativeNetRequest 示例项目，通过 URL 重定向实现 CDN 替换：</p>
+<pre><code class="hljs language-json"><span class="hljs-punctuation">{</span>
+  <span class="hljs-attr">&quot;id&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">1</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;priority&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">1</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;action&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+    <span class="hljs-attr">&quot;type&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;redirect&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;redirect&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+      <span class="hljs-attr">&quot;regexSubstitution&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;https://cdnjs.loli.net/\\1&quot;</span>
+    <span class="hljs-punctuation">}</span>
+  <span class="hljs-punctuation">}</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;condition&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+    <span class="hljs-attr">&quot;regexFilter&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;^https?://cdnjs\\.cloudflare\\.com/(.*)&quot;</span>
+  <span class="hljs-punctuation">}</span>
+<span class="hljs-punctuation">}</span></code></pre><hr>
+<h2 id="sec-15">五、网盘直链解析</h2><h3 id="sec-16">5.1 核心原理</h3><p>网盘直链解析 = <strong>请求拦截 + 认证提取</strong>：</p>
+<pre><code class="hljs language-text">用户操作 → 浏览器发起请求
+                  ↓
+拦截 XHR/Fetch 响应 ← declarativeNetRequest / content script
+                  ↓
+提取直链 URL ← 从 API 响应 JSON 中解析
+                  ↓
+拼接下载参数 ← token / timestamp / signature
+                  ↓
+触发下载 ← chrome.downloads.download API</code></pre><h3 id="sec-17">5.2 实现方案对比</h3><table>
+<thead>
+<tr>
+<th>方案</th>
+<th>优点</th>
+<th>缺点</th>
+<th>适用场景</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>declarativeNetRequest</strong></td>
+<td>性能好、稳定</td>
+<td>无法读取响应体</td>
+<td>修改请求头/重定向</td>
+</tr>
+<tr>
+<td><strong>Content Script + fetch 拦截</strong></td>
+<td>可以读取响应体</td>
+<td>性能稍差</td>
+<td>提取 API 返回的直链</td>
+</tr>
+<tr>
+<td><strong>Service Worker</strong></td>
+<td>可持久化状态</td>
+<td>生命周期受限</td>
+<td>管理 Cookie/Token</td>
+</tr>
+</tbody></table>
+<h3 id="sec-18">5.3 Content Script 拦截示例</h3><pre><code class="hljs language-javascript"><span class="hljs-comment">// content_script.js - 拦截 fetch 响应</span>
+<span class="hljs-keyword">const</span> originalFetch = <span class="hljs-variable language_">window</span>.<span class="hljs-property">fetch</span>;
+<span class="hljs-variable language_">window</span>.<span class="hljs-property">fetch</span> = <span class="hljs-keyword">async</span> <span class="hljs-keyword">function</span>(<span class="hljs-params">...args</span>) {
+  <span class="hljs-keyword">const</span> response = <span class="hljs-keyword">await</span> originalFetch.<span class="hljs-title function_">apply</span>(<span class="hljs-variable language_">this</span>, args);
+  
+  <span class="hljs-comment">// 只拦截目标网盘的 API</span>
+  <span class="hljs-keyword">if</span> (args[<span class="hljs-number">0</span>].<span class="hljs-title function_">includes</span>(<span class="hljs-string">&#x27;/get_download_url&#x27;</span>)) {
+    <span class="hljs-keyword">const</span> cloned = response.<span class="hljs-title function_">clone</span>();
+    <span class="hljs-keyword">const</span> data = <span class="hljs-keyword">await</span> cloned.<span class="hljs-title function_">json</span>();
+    
+    <span class="hljs-comment">// 提取直链并通知扩展后台</span>
+    chrome.<span class="hljs-property">runtime</span>.<span class="hljs-title function_">sendMessage</span>({
+      <span class="hljs-attr">type</span>: <span class="hljs-string">&#x27;DIRECT_LINK&#x27;</span>,
+      <span class="hljs-attr">url</span>: data.<span class="hljs-property">download_url</span>,
+      <span class="hljs-attr">filename</span>: data.<span class="hljs-property">file_name</span>
+    });
+  }
+  <span class="hljs-keyword">return</span> response;
+};</code></pre><hr>
+<h2 id="sec-19">六、推荐学习路径</h2><h3 id="sec-20">6.1 必读开源项目</h3><table>
+<thead>
+<tr>
+<th>项目</th>
+<th>⭐</th>
+<th>学习内容</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>uBlock Origin</strong></td>
+<td>65.9k</td>
+<td>完整广告拦截引擎实现</td>
+</tr>
+<tr>
+<td><strong>uBlock Origin Lite</strong></td>
+<td>-</td>
+<td>MV3 + declarativeNetRequest 适配</td>
+</tr>
+<tr>
+<td><strong>Adblock Plus</strong></td>
+<td>-</td>
+<td>经典实现，EasyList 规则引擎</td>
+</tr>
+<tr>
+<td><strong>Replace Google CDN</strong></td>
+<td>-</td>
+<td>declarativeNetRequest 轻量示例</td>
+</tr>
+</tbody></table>
+<h3 id="sec-21">6.2 动手实验</h3><pre><code class="hljs language-bash"><span class="hljs-comment"># 1. 加载一个未打包的扩展</span>
+chrome://extensions/ → 开发者模式 → 加载已解压的扩展程序
+
+<span class="hljs-comment"># 2. 模拟声明式规则</span>
+<span class="hljs-built_in">cat</span> &gt; rules.json &lt;&lt; <span class="hljs-string">&#x27;EOF&#x27;</span>
+[{
+  <span class="hljs-string">&quot;id&quot;</span>: 1,
+  <span class="hljs-string">&quot;priority&quot;</span>: 1,
+  <span class="hljs-string">&quot;action&quot;</span>: { <span class="hljs-string">&quot;type&quot;</span>: <span class="hljs-string">&quot;block&quot;</span> },
+  <span class="hljs-string">&quot;condition&quot;</span>: {
+    <span class="hljs-string">&quot;urlFilter&quot;</span>: <span class="hljs-string">&quot;||doubleclick.net&quot;</span>,
+    <span class="hljs-string">&quot;resourceTypes&quot;</span>: [<span class="hljs-string">&quot;script&quot;</span>]
+  }
+}]
+EOF
+
+<span class="hljs-comment"># 3. 用 Chrome DevTools 调试拦截效果</span>
+<span class="hljs-comment"># Network tab → 过滤 ERR_BLOCKED_BY_CLIENT</span></code></pre><hr>
+<h2 id="sec-22">七、总结</h2><p>广告拦截技术演进的本质，是从** JS 层拦截<strong>走向</strong>引擎层拦截**：</p>
+<pre><code class="hljs language-text">MV2: JS 层        → 每次请求过 JS 事件循环
+MV3: C++ 引擎层   → 预编译规则，网络栈直接匹配</code></pre><p>作为浏览器开发者，理解 <code>declarativeNetRequest</code> 和 Chromium 网络栈的关系，是掌握广告拦截/网络请求定制的关键。</p>
+<hr>
+<p><em>参考项目：uBlock Origin (github.com/gorhill/uBlock), Chrome Extensions API (developer.chrome.com), Replace Google CDN, Adblock Plus (gitlab.com/eyeo/adblockplus)</em></p>
+
+    </div>
+    <footer class="post-footer">
+      <span>本文为静态版，供抓取与检索；交互版请访问 <a href="/post/adblock-declarative-net-request/">/post/adblock-declarative-net-request/</a></span>
+      <a href="https://github.com/differs">GitHub</a>
+    </footer>
+  </article>
+</div>
+<footer class="site-footer">differs' blog — 浏览器工程实践笔记 · <a href="/">首页</a></footer>
+</body>
+</html>

@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import { resolve } from 'path';
+import { execFileSync } from 'child_process';
 import fs from 'fs';
 
 function postIndexPlugin() {
@@ -51,6 +52,18 @@ function postIndexPlugin() {
         }
       });
       console.log(`📄 Copied ${files.length} markdown files`);
+
+      // 5. 生成爬虫友好的静态文章页（docs/articles/{slug}.html，HTTP 200 + 内联正文）
+      //    确保在 emptyOutDir 之后执行，避免被清空；子进程隔离执行，避免 esbuild 打包冲突
+      try {
+        execFileSync(
+          process.execPath,
+          [resolve(__dirname, 'scripts', 'gen-articles.mjs')],
+          { stdio: 'inherit' },
+        );
+      } catch (err) {
+        console.error('⚠️ 静态文章生成失败:', err.message);
+      }
     }
   };
 }

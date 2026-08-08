@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chromium Fork 的版本管理艺术：Upstream Rebase 实战指南 · differs' blog</title>
+<meta name="description" content="本文基于对 Kiwi Browser Next、Supermium、Brave Browser、Hysteria fork Quinn 等开源项目的源码分析，系统梳理 Chromium fork 的 Upstream 同步策略、冲突解决与版本管理最佳实践。 一、为什么要维护 Chromium Fork？ 当你 fork Chromium 后，你就进入了一个&quot;">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://blog.wedevs.org/articles/chromium-fork-rebase-practice.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Chromium Fork 的版本管理艺术：Upstream Rebase 实战指南","datePublished":"2026-06-01","description":"本文基于对 Kiwi Browser Next、Supermium、Brave Browser、Hysteria fork Quinn 等开源项目的源码分析，系统梳理 Chromium fork 的 Upstream 同步策略、冲突解决与版本管理最佳实践。 一、为什么要维护 Chromium Fork？ 当你 fork Chromium 后，你就进入了一个\"","url":"https://blog.wedevs.org/articles/chromium-fork-rebase-practice.html","author":{"@type":"Person","name":"differs","url":"https://github.com/differs"}}</script>
+<style>
+
+:root {
+  --bg: #f7f8fa;
+  --card: #ffffff;
+  --text: #1f2328;
+  --text-light: #57606a;
+  --text-muted: #8b949e;
+  --border: #d0d7de;
+  --accent: #1a56db;
+  --accent-bg: #eef4ff;
+  --code-bg: #f6f8fa;
+  --quote-bg: #f0f4ff;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  font-family: "Noto Sans CJK SC", "Source Han Sans SC", "PingFang SC",
+    "Microsoft YaHei", "Hiragino Sans GB", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.85;
+  font-size: 16px;
+}
+.site-header {
+  border-bottom: 1px solid var(--border);
+  background: var(--card);
+  position: sticky; top: 0; z-index: 10;
+}
+.site-header .inner {
+  max-width: 860px; margin: 0 auto; padding: 14px 24px;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+.site-header .site-title { font-weight: 700; font-size: 15px; color: var(--text); text-decoration: none; }
+.site-header .site-title:hover { color: var(--accent); }
+.site-header .site-sub { font-size: 12px; color: var(--text-muted); }
+.site-header .back-link { font-size: 13px; color: var(--accent); text-decoration: none; }
+.site-header .back-link:hover { text-decoration: underline; }
+.container { max-width: 860px; margin: 0 auto; padding: 40px 24px 64px; }
+article.post { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 40px 48px; }
+.post-header { border-bottom: 1px solid var(--border); padding-bottom: 20px; margin-bottom: 24px; }
+.post-title { font-size: 26px; line-height: 1.4; margin: 0 0 10px; }
+.post-meta { font-size: 13px; color: var(--text-light); display: flex; gap: 16px; flex-wrap: wrap; }
+.post-meta a { color: var(--accent); text-decoration: none; }
+.post-meta a:hover { text-decoration: underline; }
+.toc {
+  background: var(--accent-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin: 0 0 28px;
+  font-size: 14px;
+}
+.toc summary { cursor: pointer; font-weight: 600; color: var(--text); margin-bottom: 8px; }
+.toc ul { margin: 0; padding-left: 18px; }
+.toc li { margin: 3px 0; }
+.toc a { color: var(--accent); text-decoration: none; }
+.toc a:hover { text-decoration: underline; }
+.article-body { font-size: 16px; }
+.article-body > *:first-child { margin-top: 0; }
+.article-body h1, .article-body h2, .article-body h3, .article-body h4 {
+  line-height: 1.45; margin: 1.6em 0 0.6em; scroll-margin-top: 80px;
+}
+.article-body h2 { font-size: 22px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+.article-body h3 { font-size: 18px; }
+.article-body h4 { font-size: 16px; }
+.article-body p { margin: 0.8em 0; }
+.article-body a { color: var(--accent); }
+.article-body ul, .article-body ol { padding-left: 26px; margin: 0.8em 0; }
+.article-body li { margin: 0.3em 0; }
+.article-body blockquote {
+  margin: 1em 0; padding: 10px 18px;
+  background: var(--quote-bg);
+  border-left: 4px solid var(--accent);
+  border-radius: 0 8px 8px 0;
+  color: var(--text-light);
+}
+.article-body blockquote p { margin: 0.3em 0; }
+.article-body table { border-collapse: collapse; width: 100%; margin: 1em 0; font-size: 14px; display: block; overflow-x: auto; }
+.article-body th, .article-body td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; }
+.article-body th { background: var(--accent-bg); font-weight: 600; }
+.article-body tr:nth-child(even) td { background: #fafbfc; }
+.article-body code {
+  font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", "Source Code Pro", Consolas, monospace;
+  font-size: 0.88em;
+  background: var(--code-bg);
+  padding: 2px 6px; border-radius: 4px;
+}
+.article-body pre {
+  margin: 1.2em 0; padding: 0; border-radius: 8px; overflow-x: auto;
+  background: #24292e; line-height: 1.6; font-size: 13.5px;
+}
+.article-body pre code {
+  display: block; padding: 16px 18px; background: none;
+  color: #e6edf3; font-size: inherit; overflow: visible;
+}
+.article-body hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+.article-body img { max-width: 100%; border-radius: 8px; }
+.post-footer {
+  margin-top: 36px; padding-top: 20px;
+  border-top: 1px solid var(--border);
+  font-size: 13px; color: var(--text-light);
+  display: flex; gap: 18px; flex-wrap: wrap;
+}
+.post-footer a { color: var(--accent); text-decoration: none; }
+.post-footer a:hover { text-decoration: underline; }
+.site-footer { text-align: center; font-size: 12px; color: var(--text-muted); padding: 0 24px 40px; }
+@media (max-width: 640px) {
+  article.post { padding: 24px 18px; }
+  .post-title { font-size: 21px; }
+  .container { padding: 20px 12px 48px; }
+}
+@media print {
+  body { background: #fff; }
+  article.post { border: none; padding: 0; }
+  .site-header { position: static; }
+  pre { white-space: pre-wrap; word-break: break-all; }
+}
+
+pre code.hljs {
+  display: block;
+  overflow-x: auto;
+  padding: 1em
+}
+code.hljs {
+  padding: 3px 5px
+}
+/*!
+  Theme: GitHub Dark
+  Description: Dark theme as seen on github.com
+  Author: github.com
+  Maintainer: @Hirse
+  Updated: 2021-05-15
+
+  Outdated base version: https://github.com/primer/github-syntax-dark
+  Current colors taken from GitHub's CSS
+*/
+.hljs {
+  color: #c9d1d9;
+  background: #0d1117
+}
+.hljs-doctag,
+.hljs-keyword,
+.hljs-meta .hljs-keyword,
+.hljs-template-tag,
+.hljs-template-variable,
+.hljs-type,
+.hljs-variable.language_ {
+  /* prettylights-syntax-keyword */
+  color: #ff7b72
+}
+.hljs-title,
+.hljs-title.class_,
+.hljs-title.class_.inherited__,
+.hljs-title.function_ {
+  /* prettylights-syntax-entity */
+  color: #d2a8ff
+}
+.hljs-attr,
+.hljs-attribute,
+.hljs-literal,
+.hljs-meta,
+.hljs-number,
+.hljs-operator,
+.hljs-variable,
+.hljs-selector-attr,
+.hljs-selector-class,
+.hljs-selector-id {
+  /* prettylights-syntax-constant */
+  color: #79c0ff
+}
+.hljs-regexp,
+.hljs-string,
+.hljs-meta .hljs-string {
+  /* prettylights-syntax-string */
+  color: #a5d6ff
+}
+.hljs-built_in,
+.hljs-symbol {
+  /* prettylights-syntax-variable */
+  color: #ffa657
+}
+.hljs-comment,
+.hljs-code,
+.hljs-formula {
+  /* prettylights-syntax-comment */
+  color: #8b949e
+}
+.hljs-name,
+.hljs-quote,
+.hljs-selector-tag,
+.hljs-selector-pseudo {
+  /* prettylights-syntax-entity-tag */
+  color: #7ee787
+}
+.hljs-subst {
+  /* prettylights-syntax-storage-modifier-import */
+  color: #c9d1d9
+}
+.hljs-section {
+  /* prettylights-syntax-markup-heading */
+  color: #1f6feb;
+  font-weight: bold
+}
+.hljs-bullet {
+  /* prettylights-syntax-markup-list */
+  color: #f2cc60
+}
+.hljs-emphasis {
+  /* prettylights-syntax-markup-italic */
+  color: #c9d1d9;
+  font-style: italic
+}
+.hljs-strong {
+  /* prettylights-syntax-markup-bold */
+  color: #c9d1d9;
+  font-weight: bold
+}
+.hljs-addition {
+  /* prettylights-syntax-markup-inserted */
+  color: #aff5b4;
+  background-color: #033a16
+}
+.hljs-deletion {
+  /* prettylights-syntax-markup-deleted */
+  color: #ffdcd7;
+  background-color: #67060c
+}
+.hljs-char.escape_,
+.hljs-link,
+.hljs-params,
+.hljs-property,
+.hljs-punctuation,
+.hljs-tag {
+  /* purposely ignored */
+  
+}
+</style>
+</head>
+<body>
+<header class="site-header">
+  <div class="inner">
+    <a class="site-title" href="/">differs' blog <span class="site-sub">浏览器工程实践笔记</span></a>
+    <a class="back-link" href="/">← 返回博客</a>
+  </div>
+</header>
+<div class="container">
+  <article class="post">
+    <header class="post-header">
+      <h1 class="post-title">Chromium Fork 的版本管理艺术：Upstream Rebase 实战指南</h1>
+      <div class="post-meta">
+        <span>📅 2026-06-01</span>
+        <a href="/">differs' blog</a>
+        <a href="/post/chromium-fork-rebase-practice/">交互版（SPA）</a>
+      </div>
+    </header>
+    <nav class="toc" aria-label="目录"><details open><summary>目录</summary><ul><li style="margin-left:-14px"><a href="#sec-1">Chromium Fork 的版本管理艺术：Upstream Rebase 实战指南</a></li><li style="margin-left:0px"><a href="#sec-2">一、为什么要维护 Chromium Fork？</a></li><li style="margin-left:14px"><a href="#sec-3">1.1 Fork 的典型场景</a></li><li style="margin-left:0px"><a href="#sec-4">二、Git 层面的核心问题</a></li><li style="margin-left:14px"><a href="#sec-5">2.1 Merge vs Rebase</a></li><li style="margin-left:14px"><a href="#sec-6">2.2 Chromium 的特殊性</a></li><li style="margin-left:0px"><a href="#sec-7">三、两种主流同步策略</a></li><li style="margin-left:14px"><a href="#sec-8">3.1 策略一：Merge 主线（推荐团队使用）</a></li><li style="margin-left:14px"><a href="#sec-9">3.2 策略二：Rebase（适合个人分支）</a></li><li style="margin-left:0px"><a href="#sec-10">四、实战：维护一个 Chromium Fork</a></li><li style="margin-left:14px"><a href="#sec-11">4.1 仓库初始化</a></li><li style="margin-left:14px"><a href="#sec-12">4.2 建立 Patch 栈</a></li><li style="margin-left:14px"><a href="#sec-13">4.3 定期的 Rebase 流程</a></li><li style="margin-left:14px"><a href="#sec-14">4.4 冲突解决技巧</a></li><li style="margin-left:14px"><a href="#sec-15">4.5 从 Hysteria fork Quinn 中学到的</a></li><li style="margin-left:0px"><a href="#sec-16">五、开源项目参考</a></li><li style="margin-left:14px"><a href="#sec-17">5.1 Supermium（Win32SS）</a></li><li style="margin-left:14px"><a href="#sec-18">5.2 Kiwi Browser Next</a></li><li style="margin-left:14px"><a href="#sec-19">5.3 Brave Browser</a></li><li style="margin-left:0px"><a href="#sec-20">六、推荐工具链</a></li><li style="margin-left:0px"><a href="#sec-21">七、总结：Fork 管理铁律</a></li></ul></details></nav>
+    <div class="article-body">
+<h1 id="sec-1">Chromium Fork 的版本管理艺术：Upstream Rebase 实战指南</h1><blockquote>
+<p>本文基于对 Kiwi Browser Next、Supermium、Brave Browser、Hysteria (fork Quinn) 等开源项目的源码分析，系统梳理 Chromium fork 的 Upstream 同步策略、冲突解决与版本管理最佳实践。</p>
+</blockquote>
+<hr>
+<h2 id="sec-2">一、为什么要维护 Chromium Fork？</h2><h3 id="sec-3">1.1 Fork 的典型场景</h3><pre><code class="hljs language-text">Chromium 上游 (chromium.org)
+    │
+    ├── Kiwi Browser（移动端 + 扩展支持）
+    ├── Su妹妹ium（Win32 支持）
+    ├── Brave（隐私 + 广告拦截内置）
+    ├── Edge（微软账号 + 生态整合）
+    └── Opera（内置 VPN + 侧边栏）</code></pre><p>当你 fork Chromium 后，你就进入了一个&quot;双线作战&quot;状态：</p>
+<pre><code class="hljs language-text">上游 Chromium:  ── C1 ── C2 ── C3 ── C4 ── C5 ── (持续更新)
+                          \
+你的 Fork:       ── F1 ── F2 ── F3 ── F4 ── (你的定制)</code></pre><p>你的定制（F1-F4）需要<strong>始终建基于上游</strong>，否则 Chromium 更新后你的 patch 就会冲突。</p>
+<hr>
+<h2 id="sec-4">二、Git 层面的核心问题</h2><h3 id="sec-5">2.1 Merge vs Rebase</h3><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>Merge</th>
+<th>Rebase</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>历史</td>
+<td>保留分叉，&quot;丫&quot;字形</td>
+<td>重写成直线，&quot;一&quot;字形</td>
+</tr>
+<tr>
+<td>冲突解决</td>
+<td>一次解决</td>
+<td>每个 commit 依次解决</td>
+</tr>
+<tr>
+<td>安全性</td>
+<td>安全，可 push 到共享分支</td>
+<td><strong>危险</strong>，需 force push</td>
+</tr>
+<tr>
+<td>适用场景</td>
+<td>长期共享分支</td>
+<td>本地/个人分支</td>
+</tr>
+</tbody></table>
+<p><strong>铁律：</strong></p>
+<pre><code class="hljs language-text">已经 push 的、别人在用的分支 → 只能用 merge
+只有自己在用的本地分支    → 可以用 rebase</code></pre><h3 id="sec-6">2.2 Chromium 的特殊性</h3><p>Chromium 不是普通的 Git 仓库。它有：</p>
+<ul>
+<li><strong>177 万+ commits</strong></li>
+<li><strong>20GB+ 源码</strong>（不含 <code>.git</code>）</li>
+<li><strong>40+ 子仓库</strong>（通过 DEPS 管理）</li>
+<li><strong>每天数百个 commits</strong></li>
+</ul>
+<p>在这样的体量下，一次简单的 <code>git merge</code> 可能涉及数千个文件变更。</p>
+<hr>
+<h2 id="sec-7">三、两种主流同步策略</h2><h3 id="sec-8">3.1 策略一：Merge 主线（推荐团队使用）</h3><p>Supermium 使用的方式：</p>
+<pre><code class="hljs language-bash"><span class="hljs-comment"># 配置上游远程</span>
+git remote add upstream https://github.com/chromium/chromium.git
+
+<span class="hljs-comment"># 定期拉取上游更新</span>
+git fetch upstream main
+
+<span class="hljs-comment"># 合并到你的主分支</span>
+git checkout main
+git merge upstream/main
+<span class="hljs-comment"># → 产生一个 Merge Commit</span>
+<span class="hljs-comment"># → 冲突在此次合并中一次性解决</span></code></pre><p><strong>Supermium 真实数据：</strong> 领先上游 <strong>4860 commits</strong>，落后上游 <strong>10 万+ commits</strong>。他们通过 merge 保持同步，因为他们的 fork 有多个贡献者。</p>
+<p><strong>优点：</strong></p>
+<ul>
+<li>安全，push 到共享分支</li>
+<li>冲突一次解决</li>
+<li>其他人不会受影响</li>
+</ul>
+<p><strong>缺点：</strong></p>
+<ul>
+<li>提交历史有分叉</li>
+<li>多个 merge commit 使历史变复杂</li>
+</ul>
+<h3 id="sec-9">3.2 策略二：Rebase（适合个人分支）</h3><p>Kiwi Browser Next 的 <code>fetch_from_upstream.sh</code> 使用的方式：</p>
+<pre><code class="hljs language-bash"><span class="hljs-meta">#!/bin/bash</span>
+<span class="hljs-comment"># fetch_from_upstream.sh (Kiwi Browser)</span>
+<span class="hljs-comment"># 自动同步最新 Chromium 代码</span>
+
+<span class="hljs-comment"># 1. 添加上游</span>
+git remote add upstream https://github.com/kiwibrowser/src.next
+
+<span class="hljs-comment"># 2. 拉取上游代码</span>
+git fetch upstream
+
+<span class="hljs-comment"># 3. 自动变基</span>
+git rebase upstream/main
+<span class="hljs-comment"># ← 如果冲突，脚本会尝试自动解决</span>
+<span class="hljs-comment"># ← 无法自动解决的，中止并提示人工介入</span></code></pre><p><strong>Kiwi 的自动冲突解决策略：</strong></p>
+<pre><code class="hljs language-bash"><span class="hljs-comment"># 对于已知的、无害的冲突（如版本号变更），使用预设策略</span>
+git rebase -X theirs upstream/main
+<span class="hljs-comment"># -X theirs = 遇到冲突使用上游版本</span>
+<span class="hljs-comment"># 适用于：版本号、更新日志等不影响功能的内容</span></code></pre><p><strong>优点：</strong></p>
+<ul>
+<li>提交历史干净（直线）</li>
+<li>方便代码审查</li>
+</ul>
+<p><strong>缺点：</strong></p>
+<ul>
+<li>需要 force push（<code>git push --force-with-lease</code>）</li>
+<li>如果多人协作，会搞乱其他人的仓库</li>
+</ul>
+<hr>
+<h2 id="sec-10">四、实战：维护一个 Chromium Fork</h2><h3 id="sec-11">4.1 仓库初始化</h3><pre><code class="hljs language-bash"><span class="hljs-comment"># 1. Fork Chromium</span>
+<span class="hljs-comment"># GitHub 上 fork chromium/chromium → your-org/chromium</span>
+
+<span class="hljs-comment"># 2. 本地克隆（只用 bare 克隆，节省空间）</span>
+git <span class="hljs-built_in">clone</span> --bare https://github.com/your-org/chromium.git
+<span class="hljs-built_in">cd</span> chromium.git
+
+<span class="hljs-comment"># 3. 添加上游</span>
+git remote add upstream https://github.com/chromium/chromium.git
+git fetch upstream</code></pre><h3 id="sec-12">4.2 建立 Patch 栈</h3><p>不要直接修改 Chromium 源码。使用 <strong>patch 栈</strong> 管理你的定制：</p>
+<pre><code class="hljs language-bash"><span class="hljs-comment"># 为每个功能创建独立分支</span>
+git checkout -b feature/adblock
+<span class="hljs-comment"># ... 修改代码 ...</span>
+git commit -m <span class="hljs-string">&quot;feat: add built-in adblock integration&quot;</span>
+git format-patch main  <span class="hljs-comment"># → 生成 0001-feat-add-built-in-adblock-integration.patch</span></code></pre><p>推荐工具：<a href="https://wiki.debian.org/UsingQuilt"><strong>quilt</strong></a> 或 <a href="https://git-scm.com/docs/git-stash"><strong>git stash</strong></a>。</p>
+<h3 id="sec-13">4.3 定期的 Rebase 流程</h3><pre><code class="hljs language-bash"><span class="hljs-comment"># 每月一次的同步流程</span>
+<span class="hljs-comment">#!/bin/bash</span>
+<span class="hljs-built_in">set</span> -e
+
+<span class="hljs-comment"># 1. 暂停 CI，通知团队</span>
+<span class="hljs-built_in">echo</span> <span class="hljs-string">&quot;即将同步上游 Chromium...&quot;</span>
+
+<span class="hljs-comment"># 2. 拉取最新上游</span>
+git fetch upstream
+git checkout main
+git merge upstream/main
+<span class="hljs-comment"># 或 git rebase upstream/main</span>
+
+<span class="hljs-comment"># 3. 尝试自动解决已知冲突</span>
+<span class="hljs-comment"># 4. 通知团队解决剩余冲突</span>
+<span class="hljs-comment"># 5. 运行完整测试套件</span>
+ninja -C out/Default chrome
+./out/Default/chrome --version
+
+<span class="hljs-comment"># 6. 如果失败，回滚</span>
+git merge --abort
+<span class="hljs-built_in">echo</span> <span class="hljs-string">&quot;同步失败，请手动解决冲突后重试&quot;</span></code></pre><h3 id="sec-14">4.4 冲突解决技巧</h3><p>当 Chromium 上游修改了你的定制代码区域时：</p>
+<pre><code class="hljs language-bash"><span class="hljs-comment"># 1. 查看冲突文件</span>
+git diff --name-only --diff-filter=U
+
+<span class="hljs-comment"># 2. 使用 git mergetool 可视化解决</span>
+git mergetool
+
+<span class="hljs-comment"># 3. 对于已知的&quot;无害冲突&quot;（如版本号、copyright year）</span>
+<span class="hljs-comment"># 可以直接使用上游版本</span>
+git checkout --theirs chrome/VERSION
+git add chrome/VERSION
+
+<span class="hljs-comment"># 4. 对于你的核心定制（如新功能）</span>
+<span class="hljs-comment"># 必须手动逐行检查</span>
+vim chrome/browser/BUILD.gn  <span class="hljs-comment"># 手动合并</span></code></pre><p><strong>常见冲突类型：</strong></p>
+<table>
+<thead>
+<tr>
+<th>冲突类型</th>
+<th>特征</th>
+<th>解决策略</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>版本号/年份</td>
+<td><code>VERSION</code>、<code>copyright</code></td>
+<td>直接接受上游</td>
+</tr>
+<tr>
+<td>构建文件</td>
+<td><code>BUILD.gn</code>、<code>DEPS</code></td>
+<td>重新生成</td>
+</tr>
+<tr>
+<td>功能冲突</td>
+<td>双方改了同一个文件</td>
+<td>手动合并</td>
+</tr>
+<tr>
+<td>API 变更</td>
+<td>上游改了接口签名</td>
+<td>更新你的调用方</td>
+</tr>
+<tr>
+<td>文件被删</td>
+<td>上游删了你改的文件</td>
+<td>评估是否需要保留</td>
+</tr>
+</tbody></table>
+<h3 id="sec-15">4.5 从 Hysteria fork Quinn 中学到的</h3><p>在 Hysteria-rs 项目中，我维护了一个深度修改的 Quinn（Rust QUIC 库）fork：</p>
+<pre><code class="hljs language-toml"><span class="hljs-comment"># Cargo.toml 的 patch 机制</span>
+[patch.crates-io]
+quinn = { git = <span class="hljs-string">&quot;https://github.com/our-org/quinn&quot;</span>, branch = <span class="hljs-string">&quot;hysteria&quot;</span> }
+quinn-proto = { git = <span class="hljs-string">&quot;https://github.com/our-org/quinn-proto&quot;</span>, branch = <span class="hljs-string">&quot;hysteria&quot;</span> }</code></pre><p>这就是一种&quot;轻量级 fork 管理&quot;。与 Chromium fork 相比：</p>
+<pre><code class="hljs language-text">Chromium Fork                     Rust Cargo Patch
+─────────────────────────────    ────────────────────────────
+20GB+ 源码                        几个 MB 的 Rust crate
+177 万 + commits                  几千 commits
+DEPS 管理子仓库                    Cargo.toml 管理依赖
+需要专门 CI/CQ                    常规 CI 即可
+同步成本极高                      同步成本低</code></pre><p>核心理念是相通的：<strong>维护 patch 栈，定期 rebase，控制冲突范围</strong>。</p>
+<hr>
+<h2 id="sec-16">五、开源项目参考</h2><h3 id="sec-17">5.1 Supermium（Win32SS）</h3><p><code>https://github.com/win32ss/supermium</code></p>
+<ul>
+<li><strong>领先上游：</strong> 4860 commits</li>
+<li><strong>落后上游：</strong> 10 万+ commits</li>
+<li><strong>策略：</strong> Merge 主线</li>
+<li><strong>特点：</strong> 最活跃的第三方 Chromium fork</li>
+</ul>
+<pre><code class="hljs language-bash"><span class="hljs-comment"># Supermium 的同步方式</span>
+git fetch chromium
+git merge chromium/main  <span class="hljs-comment"># merge 而非 rebase</span></code></pre><h3 id="sec-18">5.2 Kiwi Browser Next</h3><p><code>https://github.com/kiwibrowser/src.next</code></p>
+<ul>
+<li><strong>策略：</strong> <code>fetch_from_upstream.sh</code> 自动化</li>
+<li><strong>特点：</strong> 针对移动端，增加扩展支持</li>
+<li><strong>补丁管理：</strong> 使用专门的 patch 管理脚本</li>
+</ul>
+<h3 id="sec-19">5.3 Brave Browser</h3><p><code>https://github.com/brave/brave-core</code></p>
+<ul>
+<li><strong>策略：</strong> 使用 <code>npm-run sync</code> 管理同步</li>
+<li><strong>特点：</strong> 最成熟的 Chromium fork 管理工具链</li>
+<li><strong>工具：</strong> <a href="https://github.com/brave/brave-browser-cocoa">brave-browser-cocoa</a> 等</li>
+</ul>
+<hr>
+<h2 id="sec-20">六、推荐工具链</h2><table>
+<thead>
+<tr>
+<th>工具</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Quilt</strong></td>
+<td>Debian 风格的 patch 管理</td>
+</tr>
+<tr>
+<td><strong>Git Worktree</strong></td>
+<td>并行工作多个分支</td>
+</tr>
+<tr>
+<td><strong>git rebase -i</strong></td>
+<td>交互式变基，整理提交</td>
+</tr>
+<tr>
+<td><strong>git range-diff</strong></td>
+<td>对比两段提交历史差异</td>
+</tr>
+<tr>
+<td><strong>diffoscope</strong></td>
+<td>深入对比文件差异</td>
+</tr>
+</tbody></table>
+<hr>
+<h2 id="sec-21">七、总结：Fork 管理铁律</h2><pre><code class="hljs language-text">┌─────────────────────────────────────────┐
+│            Chromium Fork 管理            │
+├─────────────────────────────────────────┤
+│ 1. 永远不要直接修改上游代码               │
+│ 2. 用独立分支/独立 commit 管理定制        │
+│ 3. 定期同步（至少每月一次）               │
+│ 4. 建立自动化冲突检测机制                 │
+│ 5. 维护 patch 栈文档（改了什么、为什么）   │
+│ 6. 同步前全面测试                         │
+│ 7. 使用 --force-with-lease 而非 --force   │
+└─────────────────────────────────────────┘</code></pre><p>最后记住 Git 核心原则：</p>
+<blockquote>
+<p><strong>个人分支用 rebase，共享分支用 merge。</strong></p>
+</blockquote>
+<p>只要这条原则不出错，Chromium fork 再大也不怕。</p>
+<hr>
+<p><em>参考项目：Supermium (github.com/win32ss/supermium), Kiwi Browser Next (github.com/kiwibrowser/src.next), Brave Browser (github.com/brave/brave-core), Hysteria-rs (Quinn fork)</em></p>
+
+    </div>
+    <footer class="post-footer">
+      <span>本文为静态版，供抓取与检索；交互版请访问 <a href="/post/chromium-fork-rebase-practice/">/post/chromium-fork-rebase-practice/</a></span>
+      <a href="https://github.com/differs">GitHub</a>
+    </footer>
+  </article>
+</div>
+<footer class="site-footer">differs' blog — 浏览器工程实践笔记 · <a href="/">首页</a></footer>
+</body>
+</html>

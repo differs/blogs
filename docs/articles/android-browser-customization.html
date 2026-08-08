@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Android 浏览器定制实战：默认搜索、主页、网盘入口集成 · differs' blog</title>
+<meta name="description" content="这是 Chromium 浏览器定制系列的第四篇。前三篇分别讲了 net/ 层、content/blink 层、fork/rebase 管理。本文将聚焦 Android 浏览器层——如何修改 Kiwi/Chromium 的默认搜索引擎、自定义主页、集成网盘入口，直接对应 JD 中的核心职责。 改造默认搜索、主页、品牌，集成自有搜盘 / AI 搜索 / 网盘入口">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://blog.wedevs.org/articles/android-browser-customization.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Android 浏览器定制实战：默认搜索、主页、网盘入口集成","datePublished":"2026-07-03","description":"这是 Chromium 浏览器定制系列的第四篇。前三篇分别讲了 net/ 层、content/blink 层、fork/rebase 管理。本文将聚焦 Android 浏览器层——如何修改 Kiwi/Chromium 的默认搜索引擎、自定义主页、集成网盘入口，直接对应 JD 中的核心职责。 改造默认搜索、主页、品牌，集成自有搜盘 / AI 搜索 / 网盘入口","url":"https://blog.wedevs.org/articles/android-browser-customization.html","author":{"@type":"Person","name":"differs","url":"https://github.com/differs"}}</script>
+<style>
+
+:root {
+  --bg: #f7f8fa;
+  --card: #ffffff;
+  --text: #1f2328;
+  --text-light: #57606a;
+  --text-muted: #8b949e;
+  --border: #d0d7de;
+  --accent: #1a56db;
+  --accent-bg: #eef4ff;
+  --code-bg: #f6f8fa;
+  --quote-bg: #f0f4ff;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  font-family: "Noto Sans CJK SC", "Source Han Sans SC", "PingFang SC",
+    "Microsoft YaHei", "Hiragino Sans GB", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.85;
+  font-size: 16px;
+}
+.site-header {
+  border-bottom: 1px solid var(--border);
+  background: var(--card);
+  position: sticky; top: 0; z-index: 10;
+}
+.site-header .inner {
+  max-width: 860px; margin: 0 auto; padding: 14px 24px;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+.site-header .site-title { font-weight: 700; font-size: 15px; color: var(--text); text-decoration: none; }
+.site-header .site-title:hover { color: var(--accent); }
+.site-header .site-sub { font-size: 12px; color: var(--text-muted); }
+.site-header .back-link { font-size: 13px; color: var(--accent); text-decoration: none; }
+.site-header .back-link:hover { text-decoration: underline; }
+.container { max-width: 860px; margin: 0 auto; padding: 40px 24px 64px; }
+article.post { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 40px 48px; }
+.post-header { border-bottom: 1px solid var(--border); padding-bottom: 20px; margin-bottom: 24px; }
+.post-title { font-size: 26px; line-height: 1.4; margin: 0 0 10px; }
+.post-meta { font-size: 13px; color: var(--text-light); display: flex; gap: 16px; flex-wrap: wrap; }
+.post-meta a { color: var(--accent); text-decoration: none; }
+.post-meta a:hover { text-decoration: underline; }
+.toc {
+  background: var(--accent-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin: 0 0 28px;
+  font-size: 14px;
+}
+.toc summary { cursor: pointer; font-weight: 600; color: var(--text); margin-bottom: 8px; }
+.toc ul { margin: 0; padding-left: 18px; }
+.toc li { margin: 3px 0; }
+.toc a { color: var(--accent); text-decoration: none; }
+.toc a:hover { text-decoration: underline; }
+.article-body { font-size: 16px; }
+.article-body > *:first-child { margin-top: 0; }
+.article-body h1, .article-body h2, .article-body h3, .article-body h4 {
+  line-height: 1.45; margin: 1.6em 0 0.6em; scroll-margin-top: 80px;
+}
+.article-body h2 { font-size: 22px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+.article-body h3 { font-size: 18px; }
+.article-body h4 { font-size: 16px; }
+.article-body p { margin: 0.8em 0; }
+.article-body a { color: var(--accent); }
+.article-body ul, .article-body ol { padding-left: 26px; margin: 0.8em 0; }
+.article-body li { margin: 0.3em 0; }
+.article-body blockquote {
+  margin: 1em 0; padding: 10px 18px;
+  background: var(--quote-bg);
+  border-left: 4px solid var(--accent);
+  border-radius: 0 8px 8px 0;
+  color: var(--text-light);
+}
+.article-body blockquote p { margin: 0.3em 0; }
+.article-body table { border-collapse: collapse; width: 100%; margin: 1em 0; font-size: 14px; display: block; overflow-x: auto; }
+.article-body th, .article-body td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; }
+.article-body th { background: var(--accent-bg); font-weight: 600; }
+.article-body tr:nth-child(even) td { background: #fafbfc; }
+.article-body code {
+  font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", "Source Code Pro", Consolas, monospace;
+  font-size: 0.88em;
+  background: var(--code-bg);
+  padding: 2px 6px; border-radius: 4px;
+}
+.article-body pre {
+  margin: 1.2em 0; padding: 0; border-radius: 8px; overflow-x: auto;
+  background: #24292e; line-height: 1.6; font-size: 13.5px;
+}
+.article-body pre code {
+  display: block; padding: 16px 18px; background: none;
+  color: #e6edf3; font-size: inherit; overflow: visible;
+}
+.article-body hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+.article-body img { max-width: 100%; border-radius: 8px; }
+.post-footer {
+  margin-top: 36px; padding-top: 20px;
+  border-top: 1px solid var(--border);
+  font-size: 13px; color: var(--text-light);
+  display: flex; gap: 18px; flex-wrap: wrap;
+}
+.post-footer a { color: var(--accent); text-decoration: none; }
+.post-footer a:hover { text-decoration: underline; }
+.site-footer { text-align: center; font-size: 12px; color: var(--text-muted); padding: 0 24px 40px; }
+@media (max-width: 640px) {
+  article.post { padding: 24px 18px; }
+  .post-title { font-size: 21px; }
+  .container { padding: 20px 12px 48px; }
+}
+@media print {
+  body { background: #fff; }
+  article.post { border: none; padding: 0; }
+  .site-header { position: static; }
+  pre { white-space: pre-wrap; word-break: break-all; }
+}
+
+pre code.hljs {
+  display: block;
+  overflow-x: auto;
+  padding: 1em
+}
+code.hljs {
+  padding: 3px 5px
+}
+/*!
+  Theme: GitHub Dark
+  Description: Dark theme as seen on github.com
+  Author: github.com
+  Maintainer: @Hirse
+  Updated: 2021-05-15
+
+  Outdated base version: https://github.com/primer/github-syntax-dark
+  Current colors taken from GitHub's CSS
+*/
+.hljs {
+  color: #c9d1d9;
+  background: #0d1117
+}
+.hljs-doctag,
+.hljs-keyword,
+.hljs-meta .hljs-keyword,
+.hljs-template-tag,
+.hljs-template-variable,
+.hljs-type,
+.hljs-variable.language_ {
+  /* prettylights-syntax-keyword */
+  color: #ff7b72
+}
+.hljs-title,
+.hljs-title.class_,
+.hljs-title.class_.inherited__,
+.hljs-title.function_ {
+  /* prettylights-syntax-entity */
+  color: #d2a8ff
+}
+.hljs-attr,
+.hljs-attribute,
+.hljs-literal,
+.hljs-meta,
+.hljs-number,
+.hljs-operator,
+.hljs-variable,
+.hljs-selector-attr,
+.hljs-selector-class,
+.hljs-selector-id {
+  /* prettylights-syntax-constant */
+  color: #79c0ff
+}
+.hljs-regexp,
+.hljs-string,
+.hljs-meta .hljs-string {
+  /* prettylights-syntax-string */
+  color: #a5d6ff
+}
+.hljs-built_in,
+.hljs-symbol {
+  /* prettylights-syntax-variable */
+  color: #ffa657
+}
+.hljs-comment,
+.hljs-code,
+.hljs-formula {
+  /* prettylights-syntax-comment */
+  color: #8b949e
+}
+.hljs-name,
+.hljs-quote,
+.hljs-selector-tag,
+.hljs-selector-pseudo {
+  /* prettylights-syntax-entity-tag */
+  color: #7ee787
+}
+.hljs-subst {
+  /* prettylights-syntax-storage-modifier-import */
+  color: #c9d1d9
+}
+.hljs-section {
+  /* prettylights-syntax-markup-heading */
+  color: #1f6feb;
+  font-weight: bold
+}
+.hljs-bullet {
+  /* prettylights-syntax-markup-list */
+  color: #f2cc60
+}
+.hljs-emphasis {
+  /* prettylights-syntax-markup-italic */
+  color: #c9d1d9;
+  font-style: italic
+}
+.hljs-strong {
+  /* prettylights-syntax-markup-bold */
+  color: #c9d1d9;
+  font-weight: bold
+}
+.hljs-addition {
+  /* prettylights-syntax-markup-inserted */
+  color: #aff5b4;
+  background-color: #033a16
+}
+.hljs-deletion {
+  /* prettylights-syntax-markup-deleted */
+  color: #ffdcd7;
+  background-color: #67060c
+}
+.hljs-char.escape_,
+.hljs-link,
+.hljs-params,
+.hljs-property,
+.hljs-punctuation,
+.hljs-tag {
+  /* purposely ignored */
+  
+}
+</style>
+</head>
+<body>
+<header class="site-header">
+  <div class="inner">
+    <a class="site-title" href="/">differs' blog <span class="site-sub">浏览器工程实践笔记</span></a>
+    <a class="back-link" href="/">← 返回博客</a>
+  </div>
+</header>
+<div class="container">
+  <article class="post">
+    <header class="post-header">
+      <h1 class="post-title">Android 浏览器定制实战：默认搜索、主页、网盘入口集成</h1>
+      <div class="post-meta">
+        <span>📅 2026-07-03</span>
+        <a href="/">differs' blog</a>
+        <a href="/post/android-browser-customization/">交互版（SPA）</a>
+      </div>
+    </header>
+    <nav class="toc" aria-label="目录"><details open><summary>目录</summary><ul><li style="margin-left:-14px"><a href="#sec-1">Android 浏览器定制实战：默认搜索、主页、网盘入口集成</a></li><li style="margin-left:0px"><a href="#sec-2">一、JD 核心职责拆解</a></li><li style="margin-left:0px"><a href="#sec-3">二、默认搜索引擎改造</a></li><li style="margin-left:14px"><a href="#sec-4">2.1 Chromium 搜索引擎架构</a></li><li style="margin-left:14px"><a href="#sec-5">2.2 修改默认搜索引擎</a></li><li style="margin-left:14px"><a href="#sec-6">2.3 强制设置默认搜索引擎</a></li><li style="margin-left:14px"><a href="#sec-7">2.4 参考：Kiwi 的搜索引擎选择 UI</a></li><li style="margin-left:0px"><a href="#sec-8">三、自定义主页（New Tab Page）</a></li><li style="margin-left:14px"><a href="#sec-9">3.1 Chromium NTP 架构</a></li><li style="margin-left:14px"><a href="#sec-10">3.2 修改 NTP 布局</a></li><li style="margin-left:14px"><a href="#sec-11">3.3 集成网盘入口到 NTP</a></li><li style="margin-left:14px"><a href="#sec-12">3.4 自定义主页 HTML</a></li><li style="margin-left:0px"><a href="#sec-13">四、品牌定制（Branding）</a></li><li style="margin-left:14px"><a href="#sec-14">4.1 品牌常量集中管理</a></li><li style="margin-left:14px"><a href="#sec-15">4.2 AndroidManifest 中的品牌配置</a></li><li style="margin-left:14px"><a href="#sec-16">4.3 strings.xml 品牌替换</a></li><li style="margin-left:0px"><a href="#sec-17">五、网盘入口集成</a></li><li style="margin-left:14px"><a href="#sec-18">5.1 通过 Custom Tabs 集成外部网盘</a></li><li style="margin-left:14px"><a href="#sec-19">5.2 网盘直链解析（与 AdBlocker Lite 博客呼应）</a></li><li style="margin-left:0px"><a href="#sec-20">六、与后端对接（JD 第七条）</a></li><li style="margin-left:14px"><a href="#sec-21">6.1 客户端服务端接口设计</a></li><li style="margin-left:14px"><a href="#sec-22">6.2 与 Go 后端的对接示例</a></li><li style="margin-left:0px"><a href="#sec-23">七、从 Kiwi Browser 源码中学习</a></li><li style="margin-left:14px"><a href="#sec-24">7.1 关键源码路径</a></li><li style="margin-left:14px"><a href="#sec-25">7.2 Kiwi 的扩展桥接</a></li><li style="margin-left:0px"><a href="#sec-26">八、总结：Android 浏览器定制 Checklist</a></li></ul></details></nav>
+    <div class="article-body">
+<h1 id="sec-1">Android 浏览器定制实战：默认搜索、主页、网盘入口集成</h1><blockquote>
+<p>这是 Chromium 浏览器定制系列的第四篇。前三篇分别讲了 net/ 层、content/blink 层、fork/rebase 管理。本文将聚焦 <strong>Android 浏览器层</strong>——如何修改 Kiwi/Chromium 的默认搜索引擎、自定义主页、集成网盘入口，直接对应 JD 中的核心职责。</p>
+</blockquote>
+<hr>
+<h2 id="sec-2">一、JD 核心职责拆解</h2><p>JD 第二条明确要求：</p>
+<blockquote>
+<p><strong>改造默认搜索、主页、品牌，集成自有搜盘 / AI 搜索 / 网盘入口</strong></p>
+</blockquote>
+<p>这意味着你需要在 Android 层做以下改造：</p>
+<pre><code class="hljs language-text">┌─────────────────────────────────────────────┐
+│           Android 浏览器定制层                │
+├─────────────────────────────────────────────┤
+│ 1. 默认搜索引擎（Default Search Engine）      │
+│    → SearchEngineManager / SuggestProvider  │
+│                                              │
+│ 2. 自定义主页（New Tab Page）                │
+│    → ChromeStartupController /ntp/           │
+│                                              │
+│ 3. 品牌定制（Branding）                      │
+│    → Strings / Colors / Icons / BuildConfig  │
+│                                              │
+│ 4. 网盘入口集成（Drive Integration）          │
+│    → CustomTabs / Intent Bridge / Toolbar    │
+│                                              │
+│ 5. AI 搜索入口                                │
+│    → Search Widget / Omnibox Integration     │
+└─────────────────────────────────────────────┘</code></pre><hr>
+<h2 id="sec-3">二、默认搜索引擎改造</h2><h3 id="sec-4">2.1 Chromium 搜索引擎架构</h3><pre><code class="hljs language-text">SearchEngineManager（管理可用搜索引擎列表）
+    ↓
+DefaultSearchManager（确定当前默认搜索引擎）
+    ↓
+SuggestProvider（搜索建议提供者）
+    ↓
+Omnibox（地址栏搜索输入框）</code></pre><h3 id="sec-5">2.2 修改默认搜索引擎</h3><p>在 Kiwi Browser 中，搜索引擎配置在 <code>chrome/browser/search/</code>：</p>
+<pre><code class="hljs language-java"><span class="hljs-comment">// chrome/browser/search/search_engine_manager.java（简化）</span>
+public <span class="hljs-keyword">class</span> <span class="hljs-title class_">SearchEngineManager</span> {
+    private <span class="hljs-keyword">static</span> final <span class="hljs-title class_">Map</span>&lt;<span class="hljs-title class_">String</span>, <span class="hljs-title class_">SearchEngine</span>&gt; <span class="hljs-variable constant_">KNOWN_ENGINES</span> = <span class="hljs-keyword">new</span> <span class="hljs-title class_">HashMap</span>&lt;&gt;();
+    
+    <span class="hljs-keyword">static</span> {
+        <span class="hljs-comment">// 内置搜索引擎列表</span>
+        <span class="hljs-variable constant_">KNOWN_ENGINES</span>.<span class="hljs-title function_">put</span>(<span class="hljs-string">&quot;google&quot;</span>, <span class="hljs-keyword">new</span> <span class="hljs-title class_">SearchEngine</span>(
+            <span class="hljs-string">&quot;Google&quot;</span>,
+            <span class="hljs-string">&quot;https://www.google.com/search?igu=1&amp;q=&quot;</span>,
+            <span class="hljs-string">&quot;https://www.google.com/complete/search?q=&quot;</span>,
+            <span class="hljs-string">&quot;en-US,en;q=0.9&quot;</span>
+        ));
+        
+        <span class="hljs-variable constant_">KNOWN_ENGINES</span>.<span class="hljs-title function_">put</span>(<span class="hljs-string">&quot;bing&quot;</span>, <span class="hljs-keyword">new</span> <span class="hljs-title class_">SearchEngine</span>(
+            <span class="hljs-string">&quot;Bing&quot;</span>,
+            <span class="hljs-string">&quot;https://www.bing.com/search?q=&quot;</span>,
+            <span class="hljs-literal">null</span>,
+            <span class="hljs-string">&quot;en-US,en;q=0.9&quot;</span>
+        ));
+        
+        <span class="hljs-comment">// 你的自有搜索引擎</span>
+        <span class="hljs-variable constant_">KNOWN_ENGINES</span>.<span class="hljs-title function_">put</span>(<span class="hljs-string">&quot;kwawa_search&quot;</span>, <span class="hljs-keyword">new</span> <span class="hljs-title class_">SearchEngine</span>(
+            <span class="hljs-string">&quot;蛙蛙搜索&quot;</span>,
+            <span class="hljs-string">&quot;https://search.kwawa.app/?q=&quot;</span>,
+            <span class="hljs-string">&quot;https://search.kwawa.app/suggest?q=&quot;</span>,
+            <span class="hljs-string">&quot;zh-CN,zh;q=0.9,en;q=0.5&quot;</span>
+        ));
+        
+        <span class="hljs-comment">// AI 搜索引擎</span>
+        <span class="hljs-variable constant_">KNOWN_ENGINES</span>.<span class="hljs-title function_">put</span>(<span class="hljs-string">&quot;kwawa_ai&quot;</span>, <span class="hljs-keyword">new</span> <span class="hljs-title class_">SearchEngine</span>(
+            <span class="hljs-string">&quot;蛙蛙AI搜索&quot;</span>,
+            <span class="hljs-string">&quot;https://ai.kwawa.app/?q=&quot;</span>,
+            <span class="hljs-string">&quot;https://ai.kwawa.app/suggest?q=&quot;</span>,
+            <span class="hljs-string">&quot;zh-CN,zh;q=0.9,en;q=0.5&quot;</span>
+        ));
+    }
+    
+    public <span class="hljs-title class_">SearchEngine</span> <span class="hljs-title function_">getDefaultSearchEngine</span>(<span class="hljs-params">Context context</span>) {
+        <span class="hljs-title class_">SharedPreferences</span> prefs = <span class="hljs-title class_">PreferenceManager</span>.<span class="hljs-title function_">getDefaultSharedPreferences</span>(context);
+        <span class="hljs-title class_">String</span> engineId = prefs.<span class="hljs-title function_">getString</span>(<span class="hljs-string">&quot;default_search_engine&quot;</span>, <span class="hljs-string">&quot;kwawa_search&quot;</span>);
+        <span class="hljs-keyword">return</span> <span class="hljs-variable constant_">KNOWN_ENGINES</span>.<span class="hljs-title function_">getOrDefault</span>(engineId, <span class="hljs-variable constant_">KNOWN_ENGINES</span>.<span class="hljs-title function_">get</span>(<span class="hljs-string">&quot;kwawa_search&quot;</span>));
+    }
+}</code></pre><h3 id="sec-6">2.3 强制设置默认搜索引擎</h3><p>如果你想在浏览器安装时<strong>强制</strong>使用自有搜索引擎，可以修改 <code>ChromeBrowserInitializer</code>：</p>
+<pre><code class="hljs language-java"><span class="hljs-comment">// 在浏览器首次启动时强制设置默认搜索引擎</span>
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">ChromeBrowserInitializer</span> {
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-type">void</span> <span class="hljs-title">initializeSearchEngine</span><span class="hljs-params">(Context context)</span> </span>{
+        SharedPreferences prefs = PreferenceManager.<span class="hljs-built_in">getDefaultSharedPreferences</span>(context);
+        
+        <span class="hljs-comment">// 首次启动时设置</span>
+        <span class="hljs-keyword">if</span> (!prefs.<span class="hljs-built_in">getBoolean</span>(<span class="hljs-string">&quot;search_engine_initialized&quot;</span>, <span class="hljs-literal">false</span>)) {
+            prefs.<span class="hljs-built_in">edit</span>()
+                .<span class="hljs-built_in">putString</span>(<span class="hljs-string">&quot;default_search_engine&quot;</span>, <span class="hljs-string">&quot;kwawa_search&quot;</span>)
+                .<span class="hljs-built_in">putBoolean</span>(<span class="hljs-string">&quot;search_engine_initialized&quot;</span>, <span class="hljs-literal">true</span>)
+                .<span class="hljs-built_in">apply</span>();
+            
+            Log.<span class="hljs-built_in">i</span>(<span class="hljs-string">&quot;ChromeBrowser&quot;</span>, <span class="hljs-string">&quot;默认搜索引擎设置为：蛙蛙搜索&quot;</span>);
+        }
+    }
+}</code></pre><h3 id="sec-7">2.4 参考：Kiwi 的搜索引擎选择 UI</h3><pre><code class="hljs language-java"><span class="hljs-comment">// chrome/android/java/src/org/chromium/chrome/browser/search/SearchEnginePicker.java</span>
+<span class="hljs-comment">// Kiwi 在设置中提供了一个搜索引擎选择器</span>
+<span class="hljs-comment">// 你可以在此基础上添加&quot;蛙蛙搜索&quot;作为默认选项</span>
+
+public <span class="hljs-keyword">class</span> <span class="hljs-title class_">SearchEnginePickerDialog</span> {
+    private <span class="hljs-keyword">void</span> <span class="hljs-title function_">buildEngineList</span>(<span class="hljs-params"></span>) {
+        <span class="hljs-title class_">List</span>&lt;<span class="hljs-title class_">SearchEngineItem</span>&gt; engines = <span class="hljs-keyword">new</span> <span class="hljs-title class_">ArrayList</span>&lt;&gt;();
+        
+        <span class="hljs-keyword">for</span> (<span class="hljs-title class_">Map</span>.<span class="hljs-property">Entry</span>&lt;<span class="hljs-title class_">String</span>, <span class="hljs-title class_">SearchEngine</span>&gt; entry : <span class="hljs-variable constant_">KNOWN_ENGINES</span>.<span class="hljs-title function_">entrySet</span>()) {
+            engines.<span class="hljs-title function_">add</span>(<span class="hljs-keyword">new</span> <span class="hljs-title class_">SearchEngineItem</span>(
+                entry.<span class="hljs-title function_">getKey</span>(),
+                entry.<span class="hljs-title function_">getValue</span>().<span class="hljs-title function_">getName</span>(),
+                entry.<span class="hljs-title function_">getValue</span>().<span class="hljs-title function_">getSearchUrl</span>()
+            ));
+        }
+        
+        <span class="hljs-comment">// 将&quot;蛙蛙搜索&quot;置顶</span>
+        <span class="hljs-title class_">Collections</span>.<span class="hljs-title function_">sort</span>(engines, (a, b) -&gt; {
+            <span class="hljs-keyword">if</span> (<span class="hljs-string">&quot;kwawa_search&quot;</span>.<span class="hljs-title function_">equals</span>(a.<span class="hljs-property">id</span>)) <span class="hljs-keyword">return</span> -<span class="hljs-number">1</span>;
+            <span class="hljs-keyword">if</span> (<span class="hljs-string">&quot;kwawa_search&quot;</span>.<span class="hljs-title function_">equals</span>(b.<span class="hljs-property">id</span>)) <span class="hljs-keyword">return</span> <span class="hljs-number">1</span>;
+            <span class="hljs-keyword">return</span> a.<span class="hljs-property">name</span>.<span class="hljs-title function_">compareTo</span>(b.<span class="hljs-property">name</span>);
+        });
+    }
+}</code></pre><hr>
+<h2 id="sec-8">三、自定义主页（New Tab Page）</h2><h3 id="sec-9">3.1 Chromium NTP 架构</h3><p>Chromium 的新标签页（New Tab Page, NTP）在 <code>chrome/browser/ui/webui/ntp/</code>：</p>
+<pre><code class="hljs language-text">New Tab Page
+├── HTML: chrome/browser/resources/ntp_cards/
+├── JS:   ntp_cards.js（卡片渲染逻辑）
+├── CSS:  ntp_cards.css（样式）
+└── Backend: chrome://newtab（WebUI 端点）</code></pre><h3 id="sec-10">3.2 修改 NTP 布局</h3><pre><code class="hljs language-java"><span class="hljs-comment">// 在 ChromeStartupController 中自定义 NTP 行为</span>
+public <span class="hljs-keyword">class</span> <span class="hljs-title class_">ChromeStartupController</span> {
+    
+    public <span class="hljs-keyword">void</span> <span class="hljs-title function_">customizeNewTabPage</span>(<span class="hljs-params">Context context, Bundle savedInstanceState</span>) {
+        <span class="hljs-comment">// 1. 设置自定义 NTP URL</span>
+        <span class="hljs-title class_">SharedPreferences</span> prefs = <span class="hljs-title class_">PreferenceManager</span>.<span class="hljs-title function_">getDefaultSharedPreferences</span>(context);
+        <span class="hljs-title class_">String</span> customNtp = prefs.<span class="hljs-title function_">getString</span>(<span class="hljs-string">&quot;custom_ntp_url&quot;</span>, <span class="hljs-string">&quot;chrome://newtab&quot;</span>);
+        
+        <span class="hljs-comment">// 2. 如果你的浏览器有专属主页</span>
+        <span class="hljs-keyword">if</span> (!customNtp.<span class="hljs-title function_">equals</span>(<span class="hljs-string">&quot;chrome://newtab&quot;</span>)) {
+            <span class="hljs-comment">// 加载自定义主页</span>
+            <span class="hljs-title function_">loadUrl</span>(customNtp, <span class="hljs-title class_">NavigationEntry</span>.<span class="hljs-property">GENERATED</span>);
+        }
+    }
+}</code></pre><h3 id="sec-11">3.3 集成网盘入口到 NTP</h3><p>在 NTP 页面中嵌入网盘入口是最常见的做法。Kiwi Browser 在 NTP 中集成了快捷方式：</p>
+<pre><code class="hljs language-java"><span class="hljs-comment">// chrome/android/java/src/org/chromium/chrome/browser/ntp/AppSuggestIntegration.java</span>
+<span class="hljs-comment">// 你可以在此基础上添加&quot;网盘入口&quot;卡片</span>
+
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">KwawaNtpCardsProvider</span> implements NtpCardsProvider {
+    
+    @<span class="hljs-function">Override
+    <span class="hljs-keyword">public</span> List&lt;NtpCardData&gt; <span class="hljs-title">getCards</span><span class="hljs-params">(Context context)</span> </span>{
+        List&lt;NtpCardData&gt; cards = <span class="hljs-keyword">new</span> ArrayList&lt;&gt;();
+        
+        <span class="hljs-comment">// 1. 快捷方式卡片（Kiwi 原生功能）</span>
+        cards.<span class="hljs-built_in">addAll</span>(<span class="hljs-built_in">getShortcuts</span>(context));
+        
+        <span class="hljs-comment">// 2. 网盘入口卡片（自定义）</span>
+        cards.<span class="hljs-built_in">add</span>(NtpCardData.<span class="hljs-built_in">builder</span>()
+            .<span class="hljs-built_in">setId</span>(<span class="hljs-string">&quot;kwawa_drive&quot;</span>)
+            .<span class="hljs-built_in">setTitle</span>(<span class="hljs-string">&quot;蛙蛙网盘&quot;</span>)
+            .<span class="hljs-built_in">setIconResId</span>(R.drawable.ic_kwawa_drive)
+            .<span class="hljs-built_in">setAction</span>(NtpAction.<span class="hljs-built_in">builder</span>()
+                .<span class="hljs-built_in">setType</span>(NtpAction.Type.OPEN_TAB)
+                .<span class="hljs-built_in">setUrl</span>(<span class="hljs-string">&quot;kwawa://drive/home&quot;</span>)  <span class="hljs-comment">// 自定义协议</span>
+                .<span class="hljs-built_in">build</span>())
+            .<span class="hljs-built_in">build</span>());
+        
+        <span class="hljs-comment">// 3. AI 搜索卡片（自定义）</span>
+        cards.<span class="hljs-built_in">add</span>(NtpCardData.<span class="hljs-built_in">builder</span>()
+            .<span class="hljs-built_in">setId</span>(<span class="hljs-string">&quot;kwawa_ai_search&quot;</span>)
+            .<span class="hljs-built_in">setTitle</span>(<span class="hljs-string">&quot;AI 搜索&quot;</span>)
+            .<span class="hljs-built_in">setIconResId</span>(R.drawable.ic_kwawa_ai)
+            .<span class="hljs-built_in">setAction</span>(NtpAction.<span class="hljs-built_in">builder</span>()
+                .<span class="hljs-built_in">setType</span>(NtpAction.Type.OPEN_TAB)
+                .<span class="hljs-built_in">setUrl</span>(<span class="hljs-string">&quot;chrome://newtab?q=kwawa_ai:&quot;</span>)  <span class="hljs-comment">// 触发 AI 搜索模式</span>
+                .<span class="hljs-built_in">build</span>())
+            .<span class="hljs-built_in">build</span>());
+        
+        <span class="hljs-keyword">return</span> cards;
+    }
+}</code></pre><h3 id="sec-12">3.4 自定义主页 HTML</h3><p>如果你想要更彻底的主页定制，可以提供一个独立的 HTML 页面作为主页：</p>
+<pre><code class="hljs language-html"><span class="hljs-comment">&lt;!-- kwawa-home.html --&gt;</span>
+<span class="hljs-meta">&lt;!DOCTYPE <span class="hljs-keyword">html</span>&gt;</span>
+<span class="hljs-tag">&lt;<span class="hljs-name">html</span>&gt;</span>
+<span class="hljs-tag">&lt;<span class="hljs-name">head</span>&gt;</span>
+    <span class="hljs-tag">&lt;<span class="hljs-name">meta</span> <span class="hljs-attr">name</span>=<span class="hljs-string">&quot;viewport&quot;</span> <span class="hljs-attr">content</span>=<span class="hljs-string">&quot;width=device-width, initial-scale=1.0&quot;</span>&gt;</span>
+    <span class="hljs-tag">&lt;<span class="hljs-name">style</span>&gt;</span>
+        body { font-family: sans-serif; background: #1a1a2e; color: #eee; margin: 0; padding: 20px; }
+        .search-box { display: flex; gap: 10px; margin: 30px 0; }
+        .search-box input { flex: 1; padding: 12px 16px; border-radius: 24px; border: none; background: #16213e; color: #eee; font-size: 16px; }
+        .search-box button { padding: 12px 24px; border-radius: 24px; border: none; background: #0f3460; color: #eee; cursor: pointer; }
+        .quick-links { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-top: 30px; }
+        .quick-link { background: #16213e; border-radius: 12px; padding: 20px; text-align: center; cursor: pointer; }
+        .quick-link:hover { background: #0f3460; }
+        .quick-link .icon { font-size: 32px; margin-bottom: 8px; }
+        .quick-link .label { font-size: 14px; }
+    <span class="hljs-tag">&lt;/<span class="hljs-name">style</span>&gt;</span>
+<span class="hljs-tag">&lt;/<span class="hljs-name">head</span>&gt;</span>
+<span class="hljs-tag">&lt;<span class="hljs-name">body</span>&gt;</span>
+    <span class="hljs-tag">&lt;<span class="hljs-name">h1</span>&gt;</span>🐸 蛙蛙浏览器<span class="hljs-tag">&lt;/<span class="hljs-name">h1</span>&gt;</span>
+    
+    <span class="hljs-comment">&lt;!-- 搜索框 --&gt;</span>
+    <span class="hljs-tag">&lt;<span class="hljs-name">div</span> <span class="hljs-attr">class</span>=<span class="hljs-string">&quot;search-box&quot;</span>&gt;</span>
+        <span class="hljs-tag">&lt;<span class="hljs-name">input</span> <span class="hljs-attr">type</span>=<span class="hljs-string">&quot;text&quot;</span> <span class="hljs-attr">id</span>=<span class="hljs-string">&quot;searchInput&quot;</span> <span class="hljs-attr">placeholder</span>=<span class="hljs-string">&quot;搜索或输入网址&quot;</span>&gt;</span>
+        <span class="hljs-tag">&lt;<span class="hljs-name">button</span> <span class="hljs-attr">onclick</span>=<span class="hljs-string">&quot;search()&quot;</span>&gt;</span>搜索<span class="hljs-tag">&lt;/<span class="hljs-name">button</span>&gt;</span>
+    <span class="hljs-tag">&lt;/<span class="hljs-name">div</span>&gt;</span>
+    
+    <span class="hljs-comment">&lt;!-- 快捷入口 --&gt;</span>
+    <span class="hljs-tag">&lt;<span class="hljs-name">div</span> <span class="hljs-attr">class</span>=<span class="hljs-string">&quot;quick-links&quot;</span>&gt;</span>
+        <span class="hljs-tag">&lt;<span class="hljs-name">div</span> <span class="hljs-attr">class</span>=<span class="hljs-string">&quot;quick-link&quot;</span> <span class="hljs-attr">onclick</span>=<span class="hljs-string">&quot;openDrive()&quot;</span>&gt;</span>
+            <span class="hljs-tag">&lt;<span class="hljs-name">div</span> <span class="hljs-attr">class</span>=<span class="hljs-string">&quot;icon&quot;</span>&gt;</span>📁<span class="hljs-tag">&lt;/<span class="hljs-name">div</span>&gt;</span>
+            <span class="hljs-tag">&lt;<span class="hljs-name">div</span> <span class="hljs-attr">class</span>=<span class="hljs-string">&quot;label&quot;</span>&gt;</span>蛙蛙网盘<span class="hljs-tag">&lt;/<span class="hljs-name">div</span>&gt;</span>
+        <span class="hljs-tag">&lt;/<span class="hljs-name">div</span>&gt;</span>
+        <span class="hljs-tag">&lt;<span class="hljs-name">div</span> <span class="hljs-attr">class</span>=<span class="hljs-string">&quot;quick-link&quot;</span> <span class="hljs-attr">onclick</span>=<span class="hljs-string">&quot;openAiSearch()&quot;</span>&gt;</span>
+            <span class="hljs-tag">&lt;<span class="hljs-name">div</span> <span class="hljs-attr">class</span>=<span class="hljs-string">&quot;icon&quot;</span>&gt;</span>🤖<span class="hljs-tag">&lt;/<span class="hljs-name">div</span>&gt;</span>
+            <span class="hljs-tag">&lt;<span class="hljs-name">div</span> <span class="hljs-attr">class</span>=<span class="hljs-string">&quot;label&quot;</span>&gt;</span>AI 搜索<span class="hljs-tag">&lt;/<span class="hljs-name">div</span>&gt;</span>
+        <span class="hljs-tag">&lt;/<span class="hljs-name">div</span>&gt;</span>
+        <span class="hljs-tag">&lt;<span class="hljs-name">div</span> <span class="hljs-attr">class</span>=<span class="hljs-string">&quot;quick-link&quot;</span> <span class="hljs-attr">onclick</span>=<span class="hljs-string">&quot;openDownloads()&quot;</span>&gt;</span>
+            <span class="hljs-tag">&lt;<span class="hljs-name">div</span> <span class="hljs-attr">class</span>=<span class="hljs-string">&quot;icon&quot;</span>&gt;</span>⬇️<span class="hljs-tag">&lt;/<span class="hljs-name">div</span>&gt;</span>
+            <span class="hljs-tag">&lt;<span class="hljs-name">div</span> <span class="hljs-attr">class</span>=<span class="hljs-string">&quot;label&quot;</span>&gt;</span>下载管理<span class="hljs-tag">&lt;/<span class="hljs-name">div</span>&gt;</span>
+        <span class="hljs-tag">&lt;/<span class="hljs-name">div</span>&gt;</span>
+        <span class="hljs-tag">&lt;<span class="hljs-name">div</span> <span class="hljs-attr">class</span>=<span class="hljs-string">&quot;quick-link&quot;</span> <span class="hljs-attr">onclick</span>=<span class="hljs-string">&quot;openHistory()&quot;</span>&gt;</span>
+            <span class="hljs-tag">&lt;<span class="hljs-name">div</span> <span class="hljs-attr">class</span>=<span class="hljs-string">&quot;icon&quot;</span>&gt;</span>📜<span class="hljs-tag">&lt;/<span class="hljs-name">div</span>&gt;</span>
+            <span class="hljs-tag">&lt;<span class="hljs-name">div</span> <span class="hljs-attr">class</span>=<span class="hljs-string">&quot;label&quot;</span>&gt;</span>历史记录<span class="hljs-tag">&lt;/<span class="hljs-name">div</span>&gt;</span>
+        <span class="hljs-tag">&lt;/<span class="hljs-name">div</span>&gt;</span>
+    <span class="hljs-tag">&lt;/<span class="hljs-name">div</span>&gt;</span>
+    
+    <span class="hljs-tag">&lt;<span class="hljs-name">script</span>&gt;</span><span class="language-javascript">
+        <span class="hljs-keyword">function</span> <span class="hljs-title function_">search</span>(<span class="hljs-params"></span>) {
+            <span class="hljs-keyword">const</span> q = <span class="hljs-variable language_">document</span>.<span class="hljs-title function_">getElementById</span>(<span class="hljs-string">&#x27;searchInput&#x27;</span>).<span class="hljs-property">value</span>;
+            <span class="hljs-comment">// 通过 Android Bridge 调用原生方法</span>
+            <span class="hljs-keyword">if</span> (<span class="hljs-variable language_">window</span>.<span class="hljs-property">AndroidBridge</span>) {
+                <span class="hljs-variable language_">window</span>.<span class="hljs-property">AndroidBridge</span>.<span class="hljs-title function_">search</span>(q);
+            }
+        }
+        
+        <span class="hljs-keyword">function</span> <span class="hljs-title function_">openDrive</span>(<span class="hljs-params"></span>) {
+            <span class="hljs-keyword">if</span> (<span class="hljs-variable language_">window</span>.<span class="hljs-property">AndroidBridge</span>) {
+                <span class="hljs-variable language_">window</span>.<span class="hljs-property">AndroidBridge</span>.<span class="hljs-title function_">openUrl</span>(<span class="hljs-string">&#x27;kwawa://drive/home&#x27;</span>);
+            }
+        }
+        
+        <span class="hljs-keyword">function</span> <span class="hljs-title function_">openAiSearch</span>(<span class="hljs-params"></span>) {
+            <span class="hljs-keyword">if</span> (<span class="hljs-variable language_">window</span>.<span class="hljs-property">AndroidBridge</span>) {
+                <span class="hljs-variable language_">window</span>.<span class="hljs-property">AndroidBridge</span>.<span class="hljs-title function_">searchWithAI</span>(<span class="hljs-variable language_">document</span>.<span class="hljs-title function_">getElementById</span>(<span class="hljs-string">&#x27;searchInput&#x27;</span>).<span class="hljs-property">value</span>);
+            }
+        }
+        
+        <span class="hljs-keyword">function</span> <span class="hljs-title function_">openDownloads</span>(<span class="hljs-params"></span>) {
+            <span class="hljs-keyword">if</span> (<span class="hljs-variable language_">window</span>.<span class="hljs-property">AndroidBridge</span>) {
+                <span class="hljs-variable language_">window</span>.<span class="hljs-property">AndroidBridge</span>.<span class="hljs-title function_">showDownloads</span>();
+            }
+        }
+        
+        <span class="hljs-keyword">function</span> <span class="hljs-title function_">openHistory</span>(<span class="hljs-params"></span>) {
+            <span class="hljs-keyword">if</span> (<span class="hljs-variable language_">window</span>.<span class="hljs-property">AndroidBridge</span>) {
+                <span class="hljs-variable language_">window</span>.<span class="hljs-property">AndroidBridge</span>.<span class="hljs-title function_">showHistory</span>();
+            }
+        }
+    </span><span class="hljs-tag">&lt;/<span class="hljs-name">script</span>&gt;</span>
+<span class="hljs-tag">&lt;/<span class="hljs-name">body</span>&gt;</span>
+<span class="hljs-tag">&lt;/<span class="hljs-name">html</span>&gt;</span></code></pre><hr>
+<h2 id="sec-13">四、品牌定制（Branding）</h2><p>Kiwi Browser 的品牌定制已经在简历中提到了（修改名称、图标、适配屏幕密度）。这里补充更多细节：</p>
+<h3 id="sec-14">4.1 品牌常量集中管理</h3><pre><code class="hljs language-java"><span class="hljs-comment">// chrome/browser/branding/BuildConfig.java</span>
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">final</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">BrandConfig</span> {
+    <span class="hljs-comment">// 应用名称</span>
+    <span class="hljs-keyword">public</span> <span class="hljs-type">static</span> <span class="hljs-keyword">final</span> String APP_NAME = <span class="hljs-string">&quot;蛙蛙浏览器&quot;</span>;
+    <span class="hljs-keyword">public</span> <span class="hljs-type">static</span> <span class="hljs-keyword">final</span> String APP_NAME_SHORT = <span class="hljs-string">&quot;蛙蛙&quot;</span>;
+    
+    <span class="hljs-comment">// 书签文件夹名称</span>
+    <span class="hljs-keyword">public</span> <span class="hljs-type">static</span> <span class="hljs-keyword">final</span> String BOOKMARK_BAR_NAME = <span class="hljs-string">&quot;蛙蛙书签&quot;</span>;
+    <span class="hljs-keyword">public</span> <span class="hljs-type">static</span> <span class="hljs-keyword">final</span> String BOOKMARK_MOBI_BOOKMARKS = <span class="hljs-string">&quot;蛙蛙书签&quot;</span>;
+    
+    <span class="hljs-comment">// 产品 ID（用于 Google Analytics 等）</span>
+    <span class="hljs-keyword">public</span> <span class="hljs-type">static</span> <span class="hljs-keyword">final</span> String PRODUCT_ID = <span class="hljs-string">&quot;kwawa-browser&quot;</span>;
+    
+    <span class="hljs-comment">// 默认搜索引擎 ID</span>
+    <span class="hljs-keyword">public</span> <span class="hljs-type">static</span> <span class="hljs-keyword">final</span> String DEFAULT_SEARCH_ENGINE = <span class="hljs-string">&quot;kwawa_search&quot;</span>;
+    
+    <span class="hljs-comment">// 版权信息</span>
+    <span class="hljs-keyword">public</span> <span class="hljs-type">static</span> <span class="hljs-keyword">final</span> String COPYRIGHT = <span class="hljs-string">&quot;© 2026 蛙蛙浏览器&quot;</span>;
+    
+    <span class="hljs-comment">// 品牌色</span>
+    <span class="hljs-keyword">public</span> <span class="hljs-type">static</span> <span class="hljs-keyword">final</span> <span class="hljs-type">int</span> PRIMARY_COLOR = <span class="hljs-number">0xFF2ECC71</span>;  <span class="hljs-comment">// 绿色青蛙主题</span>
+    <span class="hljs-keyword">public</span> <span class="hljs-type">static</span> <span class="hljs-keyword">final</span> <span class="hljs-type">int</span> PRIMARY_DARK_COLOR = <span class="hljs-number">0xFF27AE60</span>;
+}</code></pre><h3 id="sec-15">4.2 AndroidManifest 中的品牌配置</h3><pre><code class="hljs language-xml"><span class="hljs-comment">&lt;!-- AndroidManifest.xml --&gt;</span>
+<span class="hljs-tag">&lt;<span class="hljs-name">application</span>
+    <span class="hljs-attr">android:label</span>=<span class="hljs-string">&quot;@string/app_name&quot;</span>
+    <span class="hljs-attr">android:icon</span>=<span class="hljs-string">&quot;@mipmap/ic_launcher&quot;</span>
+    <span class="hljs-attr">android:roundIcon</span>=<span class="hljs-string">&quot;@mipmap/ic_launcher_round&quot;</span>
+    <span class="hljs-attr">android:theme</span>=<span class="hljs-string">&quot;@style/KwawaTheme&quot;</span>&gt;</span>
+    
+    <span class="hljs-comment">&lt;!-- 应用类别：浏览器 --&gt;</span>
+    <span class="hljs-tag">&lt;<span class="hljs-name">intent-filter</span>&gt;</span>
+        <span class="hljs-tag">&lt;<span class="hljs-name">action</span> <span class="hljs-attr">android:name</span>=<span class="hljs-string">&quot;android.intent.action.VIEW&quot;</span> /&gt;</span>
+        <span class="hljs-tag">&lt;<span class="hljs-name">category</span> <span class="hljs-attr">android:name</span>=<span class="hljs-string">&quot;android.intent.category.DEFAULT&quot;</span> /&gt;</span>
+        <span class="hljs-tag">&lt;<span class="hljs-name">category</span> <span class="hljs-attr">android:name</span>=<span class="hljs-string">&quot;android.intent.category.BROWSABLE&quot;</span> /&gt;</span>
+        <span class="hljs-tag">&lt;<span class="hljs-name">data</span> <span class="hljs-attr">android:scheme</span>=<span class="hljs-string">&quot;http&quot;</span> /&gt;</span>
+        <span class="hljs-tag">&lt;<span class="hljs-name">data</span> <span class="hljs-attr">android:scheme</span>=<span class="hljs-string">&quot;https&quot;</span> /&gt;</span>
+        <span class="hljs-tag">&lt;<span class="hljs-name">data</span> <span class="hljs-attr">android:scheme</span>=<span class="hljs-string">&quot;kwawa&quot;</span> /&gt;</span>  <span class="hljs-comment">&lt;!-- 自定义协议 --&gt;</span>
+    <span class="hljs-tag">&lt;/<span class="hljs-name">intent-filter</span>&gt;</span>
+<span class="hljs-tag">&lt;/<span class="hljs-name">application</span>&gt;</span></code></pre><h3 id="sec-16">4.3 strings.xml 品牌替换</h3><pre><code class="hljs language-xml"><span class="hljs-comment">&lt;!-- res/values/strings.xml --&gt;</span>
+<span class="hljs-tag">&lt;<span class="hljs-name">string</span> <span class="hljs-attr">name</span>=<span class="hljs-string">&quot;app_name&quot;</span>&gt;</span>蛙蛙浏览器<span class="hljs-tag">&lt;/<span class="hljs-name">string</span>&gt;</span>
+<span class="hljs-tag">&lt;<span class="hljs-name">string</span> <span class="hljs-attr">name</span>=<span class="hljs-string">&quot;bookmark_bar_name&quot;</span>&gt;</span>蛙蛙书签<span class="hljs-tag">&lt;/<span class="hljs-name">string</span>&gt;</span>
+<span class="hljs-tag">&lt;<span class="hljs-name">string</span> <span class="hljs-attr">name</span>=<span class="hljs-string">&quot;bookmarks_folder_title&quot;</span>&gt;</span>蛙蛙书签<span class="hljs-tag">&lt;/<span class="hljs-name">string</span>&gt;</span>
+<span class="hljs-tag">&lt;<span class="hljs-name">string</span> <span class="hljs-attr">name</span>=<span class="hljs-string">&quot;default_search_engine_name&quot;</span>&gt;</span>蛙蛙搜索<span class="hljs-tag">&lt;/<span class="hljs-name">string</span>&gt;</span>
+<span class="hljs-tag">&lt;<span class="hljs-name">string</span> <span class="hljs-attr">name</span>=<span class="hljs-string">&quot;about_chromium&quot;</span>&gt;</span>关于蛙蛙浏览器<span class="hljs-tag">&lt;/<span class="hljs-name">string</span>&gt;</span></code></pre><hr>
+<h2 id="sec-17">五、网盘入口集成</h2><h3 id="sec-18">5.1 通过 Custom Tabs 集成外部网盘</h3><pre><code class="hljs language-java"><span class="hljs-comment">// chrome/android/java/src/org/chromium/chrome/browser/customtabs/KwawaDriveBridge.java</span>
+<span class="hljs-comment">// 桥接层：在浏览器内嵌入网盘体验</span>
+
+public <span class="hljs-keyword">class</span> <span class="hljs-title class_">KwawaDriveBridge</span> {
+    
+    <span class="hljs-comment">/**
+     * 在浏览器内打开网盘文件
+     */</span>
+    public <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">openFileInBrowser</span>(<span class="hljs-params">Context context, <span class="hljs-built_in">String</span> fileId</span>) {
+        <span class="hljs-comment">// 方案 1：通过 Custom Tab 打开网盘 Web 版</span>
+        <span class="hljs-title class_">CustomTabsIntent</span>.<span class="hljs-property">Builder</span> builder = <span class="hljs-keyword">new</span> <span class="hljs-title class_">CustomTabsIntent</span>.<span class="hljs-title class_">Builder</span>();
+        builder.<span class="hljs-title function_">setToolbarColor</span>(<span class="hljs-title class_">ContextCompat</span>.<span class="hljs-title function_">getColor</span>(context, R.<span class="hljs-property">color</span>.<span class="hljs-property">kwawa_primary</span>));
+        builder.<span class="hljs-title function_">setShareState</span>(<span class="hljs-title class_">CustomTabsIntent</span>.<span class="hljs-property">SHARE_STATE_OFF</span>);
+        builder.<span class="hljs-title function_">setCloseButtonIcon</span>(<span class="hljs-title class_">BitmapFactory</span>.<span class="hljs-title function_">decodeResource</span>(
+            context.<span class="hljs-title function_">getResources</span>(), R.<span class="hljs-property">drawable</span>.<span class="hljs-property">ic_back_kwawa</span>));
+        
+        <span class="hljs-title class_">CustomTabsIntent</span> tabsIntent = builder.<span class="hljs-title function_">build</span>();
+        tabsIntent.<span class="hljs-title function_">launchUrl</span>(context, <span class="hljs-title class_">Uri</span>.<span class="hljs-title function_">parse</span>(
+            <span class="hljs-string">&quot;https://drive.kwawa.app/file/&quot;</span> + fileId));
+    }
+    
+    <span class="hljs-comment">/**
+     * 方案 2：通过 Intent 调用系统下载管理器
+     */</span>
+    public <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">downloadViaSystemManager</span>(<span class="hljs-params">Context context, <span class="hljs-built_in">String</span> directUrl, <span class="hljs-built_in">String</span> fileName</span>) {
+        <span class="hljs-title class_">Intent</span> intent = <span class="hljs-keyword">new</span> <span class="hljs-title class_">Intent</span>(<span class="hljs-title class_">Intent</span>.<span class="hljs-property">ACTION_VIEW</span>);
+        intent.<span class="hljs-title function_">setDataAndType</span>(<span class="hljs-title class_">Uri</span>.<span class="hljs-title function_">parse</span>(directUrl), <span class="hljs-string">&quot;application/octet-stream&quot;</span>);
+        intent.<span class="hljs-title function_">addFlags</span>(<span class="hljs-title class_">Intent</span>.<span class="hljs-property">FLAG_GRANT_READ_URI_PERMISSION</span>);
+        context.<span class="hljs-title function_">startActivity</span>(intent);
+    }
+    
+    <span class="hljs-comment">/**
+     * 方案 3：通过浏览器内置下载管理器
+     */</span>
+    public <span class="hljs-keyword">static</span> <span class="hljs-keyword">void</span> <span class="hljs-title function_">downloadViaBrowser</span>(<span class="hljs-params">Context context, <span class="hljs-built_in">String</span> url, <span class="hljs-built_in">String</span> referer</span>) {
+        <span class="hljs-comment">// 调用 Chrome 的 DownloadService</span>
+        <span class="hljs-title class_">DownloadService</span>.<span class="hljs-title function_">startDownload</span>(context, url, referer);
+    }
+}</code></pre><h3 id="sec-19">5.2 网盘直链解析（与 AdBlocker Lite 博客呼应）</h3><pre><code class="hljs language-java"><span class="hljs-comment">// 网盘直链解析服务</span>
+public <span class="hljs-keyword">class</span> <span class="hljs-title class_">DirectLinkResolver</span> {
+    
+    <span class="hljs-comment">/**
+     * 解析网盘分享链接为直链
+     * 策略：拦截 API 响应 → 提取下载 URL
+     */</span>
+    public <span class="hljs-keyword">static</span> <span class="hljs-title class_">String</span> <span class="hljs-title function_">resolve</span>(<span class="hljs-params"><span class="hljs-built_in">String</span> shareUrl</span>) {
+        <span class="hljs-comment">// 1. 识别网盘类型</span>
+        <span class="hljs-title class_">String</span> provider = <span class="hljs-title function_">detectProvider</span>(shareUrl);
+        
+        <span class="hljs-comment">// 2. 根据提供商调用不同的解析策略</span>
+        <span class="hljs-keyword">switch</span> (provider) {
+            <span class="hljs-keyword">case</span> <span class="hljs-string">&quot;aliyun&quot;</span>:
+                <span class="hljs-keyword">return</span> <span class="hljs-title function_">resolveAliyun</span>(shareUrl);
+            <span class="hljs-keyword">case</span> <span class="hljs-string">&quot;quark&quot;</span>:
+                <span class="hljs-keyword">return</span> <span class="hljs-title function_">resolveQuark</span>(shareUrl);
+            <span class="hljs-keyword">case</span> <span class="hljs-string">&quot;baidu&quot;</span>:
+                <span class="hljs-keyword">return</span> <span class="hljs-title function_">resolveBaidu</span>(shareUrl);
+            <span class="hljs-attr">default</span>:
+                <span class="hljs-keyword">return</span> shareUrl;
+        }
+    }
+    
+    private <span class="hljs-keyword">static</span> <span class="hljs-title class_">String</span> <span class="hljs-title function_">resolveAliyun</span>(<span class="hljs-params"><span class="hljs-built_in">String</span> shareUrl</span>) {
+        <span class="hljs-comment">// 阿里云盘：模拟登录 → 调用 /api/share/get_share_link 获取 share_token</span>
+        <span class="hljs-comment">// → 调用 /api/v2/get_file_list 获取文件列表</span>
+        <span class="hljs-comment">// → 调用 /api/v2/get_video_preview_token 获取视频预览 token</span>
+        <span class="hljs-comment">// → 拼接直链</span>
+        <span class="hljs-comment">// </span>
+        <span class="hljs-comment">// 这个逻辑可以在 Content Script（JS 层）或 shouldInterceptRequest（Java 层）实现</span>
+        <span class="hljs-keyword">return</span> <span class="hljs-literal">null</span>;
+    }
+}</code></pre><hr>
+<h2 id="sec-20">六、与后端对接（JD 第七条）</h2><p>JD 第七条提到&quot;与后端（Go/PHP）、产品对接，定义客户端接口&quot;。这是浏览器定制中容易被忽视但极重要的一环。</p>
+<h3 id="sec-21">6.1 客户端-服务端接口设计</h3><pre><code class="hljs language-java">// 定义浏览器后端 API 接口
+public interface KwawaApi {
+    
+    // <span class="hljs-number">1.</span> 搜索 API（对接自有搜索引擎）
+<span class="hljs-meta">    @GET(<span class="hljs-params"><span class="hljs-string">&quot;search&quot;</span></span>)</span>
+    Call&lt;SearchResponse&gt; search(
+<span class="hljs-meta">        @Query(<span class="hljs-params"><span class="hljs-string">&quot;q&quot;</span></span>) String query,</span>
+<span class="hljs-meta">        @Query(<span class="hljs-params"><span class="hljs-string">&quot;engine&quot;</span></span>) String engine,</span>
+<span class="hljs-meta">        @Query(<span class="hljs-params"><span class="hljs-string">&quot;page&quot;</span></span>) int page</span>
+    );
+    
+    // <span class="hljs-number">2.</span> AI 搜索 API
+<span class="hljs-meta">    @POST(<span class="hljs-params"><span class="hljs-string">&quot;ai/search&quot;</span></span>)</span>
+    Call&lt;StreamingResponse&gt; aiSearch(
+<span class="hljs-meta">        @Body AiSearchRequest request</span>
+    );
+    
+    // <span class="hljs-number">3.</span> 网盘解析 API
+<span class="hljs-meta">    @POST(<span class="hljs-params"><span class="hljs-string">&quot;drive/resolve&quot;</span></span>)</span>
+    Call&lt;DirectLinkResponse&gt; resolveDirectLink(
+<span class="hljs-meta">        @Query(<span class="hljs-params"><span class="hljs-string">&quot;url&quot;</span></span>) String shareUrl,</span>
+<span class="hljs-meta">        @Query(<span class="hljs-params"><span class="hljs-string">&quot;provider&quot;</span></span>) String provider</span>
+    );
+    
+    // <span class="hljs-number">4.</span> 下载管理 API
+<span class="hljs-meta">    @POST(<span class="hljs-params"><span class="hljs-string">&quot;downloads/create&quot;</span></span>)</span>
+    Call&lt;DownloadResponse&gt; createDownload(
+<span class="hljs-meta">        @Body DownloadRequest request</span>
+    );
+}</code></pre><h3 id="sec-22">6.2 与 Go 后端的对接示例</h3><pre><code class="hljs language-go"><span class="hljs-comment">// Go 后端（gin 框架）</span>
+package handler
+
+<span class="hljs-keyword">import</span> <span class="hljs-string">&quot;github.com/gin-gonic/gin&quot;</span>
+
+func <span class="hljs-title class_">Search</span>(c *gin.<span class="hljs-property">Context</span>) {
+    q := c.<span class="hljs-title class_">Query</span>(<span class="hljs-string">&quot;q&quot;</span>)
+    engine := c.<span class="hljs-title class_">DefaultQuery</span>(<span class="hljs-string">&quot;engine&quot;</span>, <span class="hljs-string">&quot;kwawa&quot;</span>)
+    
+    <span class="hljs-keyword">switch</span> engine {
+    <span class="hljs-keyword">case</span> <span class="hljs-string">&quot;kwawa&quot;</span>:
+        <span class="hljs-comment">// 自有搜索引擎</span>
+        results := kwawaSearch.<span class="hljs-title class_">Search</span>(q)
+        c.<span class="hljs-title class_">JSON</span>(<span class="hljs-number">200</span>, gin.<span class="hljs-property">H</span>{<span class="hljs-string">&quot;results&quot;</span>: results})
+    <span class="hljs-keyword">case</span> <span class="hljs-string">&quot;kwawa_ai&quot;</span>:
+        <span class="hljs-comment">// AI 搜索（调用 LLM）</span>
+        resp := <span class="hljs-title function_">callLLM</span>(q)
+        c.<span class="hljs-title class_">JSON</span>(<span class="hljs-number">200</span>, gin.<span class="hljs-property">H</span>{<span class="hljs-string">&quot;answer&quot;</span>: resp})
+    <span class="hljs-attr">default</span>:
+        c.<span class="hljs-title class_">JSON</span>(<span class="hljs-number">400</span>, gin.<span class="hljs-property">H</span>{<span class="hljs-string">&quot;error&quot;</span>: <span class="hljs-string">&quot;unknown engine&quot;</span>})
+    }
+}</code></pre><hr>
+<h2 id="sec-23">七、从 Kiwi Browser 源码中学习</h2><h3 id="sec-24">7.1 关键源码路径</h3><pre><code class="hljs language-text">chrome/android/java/src/org/chromium/chrome/browser/
+├── ChromeStartupController.java    ← 浏览器启动流程，NTP 设置
+├── ChromeBrowserInitializer.java   ← 初始化搜索引擎、偏好设置
+├── search/
+│   ├── SearchEngineManager.java    ← 搜索引擎管理
+│   ├── DefaultSearchManager.java   ← 默认搜索引擎
+│   └── SuggestProvider.java        ← 搜索建议
+├── download/
+│   ├── DownloadServiceImpl.java    ← 下载服务实现
+│   └── DownloadDialog.java         ← 下载对话框
+├── ntp/
+│   ├── NtpGridModel.java           ← 新标签页网格模型
+│   └── AppSuggestIntegration.java  ← 应用建议集成
+├── webapps/
+│   └── WebAppService.java          ← Web App 安装
+└── settings/
+    ├── SettingsConstants.java      ← 设置常量
+    └── Preferences.java            ← 偏好设置管理</code></pre><h3 id="sec-25">7.2 Kiwi 的扩展桥接</h3><pre><code class="hljs language-java"><span class="hljs-comment">// Kiwi 的核心：ExtensionBridge</span>
+<span class="hljs-comment">// 这是 Chrome 扩展能力在 Android 上的实现</span>
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">ExtensionBridge</span> {
+    <span class="hljs-comment">// 将 Chrome 扩展的 API 调用桥接到 Android 原生功能</span>
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title">handleMessage</span><span class="hljs-params">(ExtensionMessage msg)</span> </span>{
+        <span class="hljs-keyword">switch</span> (msg.<span class="hljs-built_in">getType</span>()) {
+            <span class="hljs-keyword">case</span> <span class="hljs-string">&quot;open_url&quot;</span>:
+                <span class="hljs-built_in">openUrl</span>(msg.<span class="hljs-built_in">getData</span>().<span class="hljs-built_in">getString</span>(<span class="hljs-string">&quot;url&quot;</span>));
+                <span class="hljs-keyword">break</span>;
+            <span class="hljs-keyword">case</span> <span class="hljs-string">&quot;show_downloads&quot;</span>:
+                <span class="hljs-built_in">showDownloads</span>();
+                <span class="hljs-keyword">break</span>;
+            <span class="hljs-keyword">case</span> <span class="hljs-string">&quot;search&quot;</span>:
+                <span class="hljs-built_in">search</span>(msg.<span class="hljs-built_in">getData</span>().<span class="hljs-built_in">getString</span>(<span class="hljs-string">&quot;query&quot;</span>));
+                <span class="hljs-keyword">break</span>;
+        }
+    }
+}</code></pre><hr>
+<h2 id="sec-26">八、总结：Android 浏览器定制 Checklist</h2><pre><code class="hljs language-text">□ 1. 修改 BuildConfig 中的品牌常量（名称、ID、颜色）
+□ 2. 替换 strings.xml 中的品牌文本
+□ 3. 替换 res/ 中的图标和主题色
+□ 4. 修改 SearchEngineManager 添加自有搜索引擎
+□ 5. 强制设置默认搜索引擎（首次启动时）
+□ 6. 定制 NTP 页面（添加网盘/AI 搜索入口卡片）
+□ 7. 实现 CustomTabs 支持（允许其他 App 在浏览器内打开链接）
+□ 8. 集成 DownloadManager（网盘直链下载）
+□ 9. 定义客户端-服务端 API 接口（Retrofit + Go 后端）
+□ 10. 编写 ProGuard 混淆规则（上架必备）
+□ 11. 配置 App Signing（keystore 管理）
+□ 12. 编写 Google Play 隐私政策页面</code></pre><p>Android 浏览器定制的核心在于理解 <strong>Chrome/Chromium 的 Android 层架构</strong>——哪些功能在 Java/Kotlin 层实现，哪些需要通过 JNI 调用 C++ 层，哪些可以通过 Content Script 和 Web API 实现。掌握这个分层思维，比死记硬背具体代码更重要。</p>
+<hr>
+<p><em>参考项目：Kiwi Browser (github.com/kiwibrowser/src.next), Brave Browser, Supermium, Chromium (chromium.org)</em></p>
+
+    </div>
+    <footer class="post-footer">
+      <span>本文为静态版，供抓取与检索；交互版请访问 <a href="/post/android-browser-customization/">/post/android-browser-customization/</a></span>
+      <a href="https://github.com/differs">GitHub</a>
+    </footer>
+  </article>
+</div>
+<footer class="site-footer">differs' blog — 浏览器工程实践笔记 · <a href="/">首页</a></footer>
+</body>
+</html>
